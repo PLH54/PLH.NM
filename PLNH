@@ -1,0 +1,164 @@
+--[[
+=====================================================
+        PLH 脚本  v0.1
+        UI 库：WindUI 1.0
+        平台：Roblox
+        功能：移动速度调整（进度条）
+=====================================================
+]]
+
+--==================== 1. 加载 WindUI ====================
+local WINDUI_URL = "https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"
+
+local ok, WindUI = pcall(function()
+    local src = game:HttpGet(WINDUI_URL)
+    local fn, err = loadstring(src)
+    if not fn then error(err) end
+    return fn()
+end)
+
+if not ok then
+    warn("[PLH] WindUI 加载失败：" .. tostring(WindUI))
+    return
+end
+
+--==================== 2. 变量与服务 ====================
+local Players      = game:GetService("Players")
+local LocalPlayer  = Players.LocalPlayer
+
+local DEFAULT_SPEED = 16      -- 默认速度
+local MAX_SPEED     = 500     -- 进度条上限
+
+local currentSpeed  = DEFAULT_SPEED
+
+-- 获取当前 Humanoid
+local function getHumanoid()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    return char:FindFirstChildOfClass("Humanoid")
+end
+
+-- 设置速度（安全写法）
+local function setSpeed(value)
+    currentSpeed = value
+    local hum = getHumanoid()
+    if hum then
+        pcall(function()
+            hum.WalkSpeed = value
+        end)
+    end
+end
+
+-- 角色重生后自动恢复速度
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.6)
+    setSpeed(currentSpeed)
+end)
+
+--==================== 3. 创建窗口 ====================
+local Window = WindUI:CreateWindow({
+    Title        = "PLH脚本",
+    Icon         = "rbxassetid://6031075931",
+    Author       = "PLH | v0.1",
+    Folder       = "PLH",
+    Size         = UDim2.fromOffset(580, 460),
+    Transparent  = true,
+    Theme        = "Dark",
+    User         = {
+        Enabled   = true,
+        Anonymous = false,
+    },
+    SideBarWidth = 200,
+    Background   = "rbxassetid://13511292255",
+    HasOutline   = true,
+})
+
+--==================== 4. 主功能页 ====================
+local MainTab = Window:Tab({ Title = "主功能", Icon = "gamepad-2" })
+
+MainTab:Section({ Title = "玩家" })
+
+-- 速度进度条
+MainTab:Slider({
+    Title = "移动速度",
+    Desc  = "拖动进度条修改人物移动速度（默认 16）",
+    Step  = 1,
+    Value = {
+        Min     = 16,
+        Max     = MAX_SPEED,
+        Default = DEFAULT_SPEED,
+    },
+    Callback = function(value)
+        setSpeed(value)
+    end,
+})
+
+-- 重置按钮
+MainTab:Button({
+    Title    = "重置速度",
+    Desc     = "恢复默认移动速度 16",
+    Callback = function()
+        setSpeed(DEFAULT_SPEED)
+        WindUI:Notify({
+            Title    = "PLH脚本",
+            Content  = "移动速度已重置为 16",
+            Duration = 3,
+            Icon     = "rotate-ccw",
+        })
+    end,
+})
+
+--==================== 5. 设置页 ====================
+local SettingsTab = Window:Tab({ Title = "设置", Icon = "settings" })
+
+SettingsTab:Section({ Title = "界面设置" })
+
+SettingsTab:Button({
+    Title    = "切换 深色 / 浅色 主题",
+    Callback = function()
+        local nowDark = true
+        pcall(function()
+            WindUI:SetTheme(nowDark and "Light" or "Dark")
+        end)
+        nowDark = not nowDark
+    end,
+})
+
+SettingsTab:Button({
+    Title    = "关闭界面",
+    Callback = function()
+        pcall(function()
+            Window:Close()
+        end)
+    end,
+})
+
+SettingsTab:Section({ Title = "使用提示" })
+
+SettingsTab:Paragraph({
+    Title = "温馨提示",
+    Desc  = "1. 本脚本需在执行器中运行\n2. 速度过高部分游戏可能被服务器拉回\n3. 角色重生后速度会自动恢复\n4. 遇到问题请重载脚本",
+})
+
+--==================== 6. 关于页 ====================
+local AboutTab = Window:Tab({ Title = "关于", Icon = "info" })
+
+AboutTab:Section({ Title = "脚本信息" })
+
+AboutTab:Paragraph({
+    Title = "PLH 脚本",
+    Desc  = "版本：v0.1\nUI 库：WindUI 1.0\n适配平台：Roblox\n当前功能：移动速度调整",
+})
+
+AboutTab:Paragraph({
+    Title = "更新计划",
+    Desc  = "后续会陆续加入更多实用功能，敬请期待。",
+})
+
+--==================== 7. 加载完成提示 ====================
+WindUI:Notify({
+    Title    = "PLH 脚本",
+    Content  = "加载成功！版本 v0.1",
+    Duration = 5,
+    Icon     = "check-circle",
+})
