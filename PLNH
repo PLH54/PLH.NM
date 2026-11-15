@@ -13,11 +13,19 @@ if not ok then
 end
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local PhysicsService = game:GetService("PhysicsService")
 local LocalPlayer = Players.LocalPlayer
+
+pcall(function()
+    PhysicsService:RegisterCollisionGroup("PLH_Self")
+    PhysicsService:CollisionGroupSetCollidable("PLH_Self", "Default", false)
+end)
 
 local DEFAULT_SPEED = 16
 local MAX_SPEED = 500
 local currentSpeed = DEFAULT_SPEED
+local noclipEnabled = false
 
 local function getHumanoid()
     local char = LocalPlayer.Character
@@ -29,63 +37,55 @@ local function setSpeed(value)
     currentSpeed = value
     local hum = getHumanoid()
     if hum then
-        pcall(function()
-            hum.WalkSpeed = value
-        end)
+        pcall(function() hum.WalkSpeed = value end)
+    end
+end
+
+local function reapplyNoclip()
+    if not noclipEnabled then return end
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then part.CanCollide = false end
     end
 end
 
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(0.6)
     setSpeed(currentSpeed)
+    reapplyNoclip()
 end)
 
 local Window = WindUI:CreateWindow({
     Title = "PLH脚本",
     Icon = "rbxassetid://6031075931",
-    Author = "PLH | v0.1.2",
+    Author = "PLH | v0.1.6",
     Folder = "PLH",
     Size = UDim2.fromOffset(580, 460),
     Transparent = true,
     Theme = "Dark",
-    User = {
-        Enabled = true,
-        Anonymous = false,
-    },
+    User = { Enabled = true, Anonymous = false },
     SideBarWidth = 200,
     Background = "rbxassetid://13511292255",
     HasOutline = true,
 })
 
 local MainTab = Window:Tab({ Title = "主功能", Icon = "gamepad-2" })
-
 MainTab:Section({ Title = "玩家" })
 
 MainTab:Slider({
     Title = "移动速度",
     Desc = "拖动进度条修改人物移动速度（默认 16）",
     Step = 1,
-    Value = {
-        Min = 16,
-        Max = MAX_SPEED,
-        Default = DEFAULT_SPEED,
-    },
-    Callback = function(value)
-        setSpeed(value)
-    end,
+    Value = { Min = 16, Max = MAX_SPEED, Default = DEFAULT_SPEED },
+    Callback = function(value) setSpeed(value) end,
 })
 
 MainTab:Button({
     Title = "重置速度",
-    Desc = "恢复默认移动速度 16",
     Callback = function()
         setSpeed(DEFAULT_SPEED)
-        WindUI:Notify({
-            Title = "PLH脚本",
-            Content = "移动速度已重置为 16",
-            Duration = 3,
-            Icon = "rotate-ccw",
-        })
+        WindUI:Notify({ Title = "PLH脚本", Content = "移动速度已重置为 16", Duration = 3, Icon = "rotate-ccw" })
     end,
 })
 
@@ -98,79 +98,612 @@ MainTab:Button({
         pcall(function()
             loadstring(game:HttpGet("https://raw.githubusercontent.com/Entitynt/Roblox-Fly-Script/refs/heads/main/FlyCommand.lua", true))()
         end)
-        WindUI:Notify({
-            Title = "PLH脚本",
-            Content = "飞行脚本已加载，按 F 键切换飞行",
-            Duration = 4,
-            Icon = "plane",
-        })
+        WindUI:Notify({ Title = "PLH脚本", Content = "飞行脚本已加载", Duration = 4, Icon = "plane" })
     end,
 })
 
 MainTab:Button({
     Title = "加载寂寞甩飞",
-    Desc = "点击加载 Fling 甩飞脚本（带玩家选择界面）",
     Callback = function()
         pcall(function()
             loadstring(game:HttpGet("https://raw.githubusercontent.com/tapashazra2345-netizen/RXS-FLINGG-V4/refs/heads/main/SCRIPT"))()
         end)
+        WindUI:Notify({ Title = "PLH脚本", Content = "寂寞甩飞脚本已加载", Duration = 4, Icon = "users" })
+    end,
+})
+
+-- ==================== 道具选项 ====================
+local ItemTab = Window:Tab({ Title = "道具选项", Icon = "box" })
+ItemTab:Section({ Title = "全游戏道具扫描与获取" })
+
+ItemTab:Paragraph({
+    Title = "使用方法",
+    Desc = "1. 点击“扫描全游戏道具”，脚本会扫描游戏里的物品与 Tool。\n2. 在下拉框选择想要的道具。\n3. 点击“获取选中道具”，道具会直接放进你的背包，同时尝试触发游戏购买远程。",
+})
+
+local capturedBuyRemotes = {}
+local hookInstalled = false
+local scannedItems = {}
+local scannedRemotes = {}
+local selectedItemName = nil
+
+local function installHook()
+    if hookInstalled then return end
+    hookInstalled = true
+    pcall(function()
+        local oldNamecall
+        oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+            local method = getnamecallmethod()
+            if method == "FireServer" or method == "InvokeServer" then
+                local name = tostring(self.Name):lower()
+                if name:find("buy") or name:find("purchase") or name:find("getitem") or name:find("claim") or name:find("shop") or name:find("give") then
+                    capturedBuyRemotes[self] = true
+                end
+            end
+            return oldNamecall(self, ...)
+        end)
+    end)
+end
+
+local function findItemContainers()
+    local containers = {}
+    local seen = {}
+    local candidates = {
+        "GameItems", "Items", "Weapons", "ShopItems", "ItemData", "Swords", "Guns",
+        "Pets", "Tools", "Catalog", "Inventory", "ItemList", "ItemsFolder", "Shop",
+        "Assets", "Database", "ItemDB", "StoreItems", "Cosmetics", "Vehicles"
+    }
+    local roots = {
+        game:GetService("ReplicatedStorage"),
+        game:GetService("ServerStorage"),
+        game:GetService("StarterPack"),
+        game:GetService("Workspace"),
+    }
+    for _, root in ipairs(roots) do
+        for _, name in ipairs(candidates) do
+            local ok2, obj = pcall(function() return root:FindFirstChild(name, true) end)
+            if ok2 and obj and (obj:IsA("Folder") or obj:IsA("Model") or obj:IsA("Configuration")) then
+                if not seen[obj] then
+                    seen[obj] = true
+                    table.insert(containers, obj)
+                end
+            end
+        end
+    end
+    return containers
+end
+
+local itemDropdown = ItemTab:Dropdown({
+    Title = "选择道具",
+    Desc = "扫描后在此选择想要获取的道具",
+    Values = {},
+    Value = nil,
+    Callback = function(name)
+        selectedItemName = name
+    end,
+})
+
+ItemTab:Button({
+    Title = "扫描全游戏道具",
+    Desc = "扫描物品文件夹与 Tool 并填充下拉列表",
+    Callback = function()
+        installHook()
+        local containers = findItemContainers()
+        if #containers == 0 then
+            WindUI:Notify({ Title = "道具扫描", Content = "未找到物品文件夹。请先在游戏里手动购买一次任意道具，再点此按钮。", Duration = 8, Icon = "search-x" })
+            return
+        end
+
+        scannedItems = {}
+        local seenNames = {}
+        for _, container in ipairs(containers) do
+            for _, child in ipairs(container:GetChildren()) do
+                if child:IsA("Instance") and not seenNames[child.Name] then
+                    seenNames[child.Name] = true
+                    table.insert(scannedItems, { name = child.Name, container = container.Name })
+                end
+            end
+        end
+
+        if #scannedItems == 0 then
+            WindUI:Notify({ Title = "道具扫描", Content = "找到了文件夹，但里面没有物品。", Duration = 5, Icon = "search-x" })
+            return
+        end
+
+        scannedRemotes = {}
+        for remote in pairs(capturedBuyRemotes) do
+            table.insert(scannedRemotes, remote)
+        end
+        if #scannedRemotes == 0 then
+            for _, obj in ipairs(game:GetDescendants()) do
+                if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                    local n = tostring(obj.Name):lower()
+                    if n:find("buy") or n:find("purchase") or n:find("getitem") or n:find("claim") or n:find("shop") or n:find("give") then
+                        table.insert(scannedRemotes, obj)
+                    end
+                end
+            end
+        end
+
+        local names = {}
+        for _, e in ipairs(scannedItems) do
+            table.insert(names, e.name)
+        end
+
+        pcall(function() itemDropdown:Refresh(names) end)
+
+        local content
+        if #scannedRemotes == 0 then
+            content = string.format("扫描到 %d 个道具，但未找到购买远程。获取时仍会尝试直接放入背包。", #scannedItems)
+        else
+            content = string.format("扫描完成！道具 %d 个，购买远程 %d 个。", #scannedItems, #scannedRemotes)
+        end
+
+        WindUI:Notify({ Title = "道具扫描", Content = content, Duration = 6, Icon = "search-check" })
+    end,
+})
+
+local function placeItemInBackpack(itemName)
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if not backpack then
+        local char = LocalPlayer.Character
+        backpack = char and char:FindFirstChild("Backpack")
+    end
+    if not backpack then
+        pcall(function()
+            backpack = Instance.new("Backpack")
+            backpack.Parent = LocalPlayer
+        end)
+    end
+    if not backpack then return false end
+
+    local roots = {
+        game:GetService("ReplicatedStorage"),
+        game:GetService("ServerStorage"),
+        game:GetService("StarterPack"),
+        game:GetService("Workspace"),
+    }
+
+    for _, root in ipairs(roots) do
+        local ok2, found = pcall(function() return root:FindFirstChild(itemName, true) end)
+        if ok2 and found and found ~= backpack then
+            if found:IsA("Tool") then
+                local clone = found:Clone()
+                clone.Parent = backpack
+                return true
+            elseif found:IsA("Model") then
+                local handle = found:FindFirstChild("Handle") or found:FindFirstChildWhichIsA("BasePart", true)
+                if handle then
+                    local tool = Instance.new("Tool")
+                    tool.Name = itemName
+                    tool.RequiresHandle = false
+                    found:Clone().Parent = tool
+                    tool.Parent = backpack
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function tryFireRemotes(itemName)
+    local sent = 0
+    if #scannedRemotes == 0 then return sent end
+
+    local payloads = {
+        { itemName },
+        { itemName, 1 },
+        { itemName, "Buy" },
+        { itemName, 1, "Buy" },
+        { "Buy", itemName },
+        { itemName, true },
+    }
+
+    for _, remote in ipairs(scannedRemotes) do
+        for _, args in ipairs(payloads) do
+            local ok2 = pcall(function()
+                if remote:IsA("RemoteEvent") then
+                    remote:FireServer(table.unpack(args))
+                elseif remote:IsA("RemoteFunction") then
+                    remote:InvokeServer(table.unpack(args))
+                end
+            end)
+            if ok2 then sent = sent + 1 end
+            task.wait(0.03)
+        end
+    end
+    return sent
+end
+
+ItemTab:Button({
+    Title = "获取选中道具",
+    Desc = "直接放进背包，并尝试触发购买远程",
+    Callback = function()
+        local name = selectedItemName or (itemDropdown and itemDropdown.Value)
+        if not name then
+            WindUI:Notify({ Title = "道具获取", Content = "请先扫描并选择道具。", Duration = 4, Icon = "alert-circle" })
+            return
+        end
+
+        local placed = placeItemInBackpack(name)
+        local sent = tryFireRemotes(name)
+
+        if placed and sent > 0 then
+            WindUI:Notify({ Title = "道具获取", Content = "「" .. name .. "」已放进背包，并触发 " .. sent .. " 次远程。", Duration = 5, Icon = "check-circle" })
+        elseif placed then
+            WindUI:Notify({ Title = "道具获取", Content = "「" .. name .. "」已放进背包（本地）。", Duration = 5, Icon = "check-circle" })
+        elseif sent > 0 then
+            WindUI:Notify({ Title = "道具获取", Content = "未找到同名 Tool，已触发 " .. sent .. " 次远程尝试。", Duration = 5, Icon = "hand" })
+        else
+            WindUI:Notify({ Title = "道具获取", Content = "未找到「" .. name .. "」的 Tool 或远程，无法获取。", Duration = 5, Icon = "alert-circle" })
+        end
+    end,
+})
+
+ItemTab:Button({
+    Title = "获取全部道具",
+    Desc = "把所有扫描到的道具放进背包并触发远程",
+    Callback = function()
+        if #scannedItems == 0 then
+            WindUI:Notify({ Title = "道具获取", Content = "请先点击“扫描全游戏道具”。", Duration = 4, Icon = "alert-circle" })
+            return
+        end
+
+        local placedCount = 0
+        local sentCount = 0
+        for _, entry in ipairs(scannedItems) do
+            if placeItemInBackpack(entry.name) then placedCount = placedCount + 1 end
+            sentCount = sentCount + tryFireRemotes(entry.name)
+            task.wait(0.05)
+        end
+
         WindUI:Notify({
-            Title = "PLH脚本",
-            Content = "寂寞甩飞脚本已加载",
-            Duration = 4,
-            Icon = "users",
+            Title = "道具获取",
+            Content = string.format("已放入背包 %d 个，触发远程 %d 次。", placedCount, sentCount),
+            Duration = 6,
+            Icon = "check-circle",
         })
     end,
 })
 
-local SettingsTab = Window:Tab({ Title = "设置", Icon = "settings" })
+-- ==================== 玩家选项 ====================
+local PlayerTab = Window:Tab({ Title = "玩家选项", Icon = "users" })
+PlayerTab:Section({ Title = "选择目标玩家" })
 
+local selectedTargetPlayer = nil
+local teleportDistance = 5
+local loopTeleportConn = nil
+local rotateConn = nil
+local loopTeleportEnabled = false
+local rotateEnabled = false
+
+local function getPlayerNames()
+    local names = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            table.insert(names, p.Name)
+        end
+    end
+    return names
+end
+
+local playerDropdown = PlayerTab:Dropdown({
+    Title = "选择目标玩家",
+    Desc = "选择后，下方操作会作用于此玩家",
+    Values = getPlayerNames(),
+    Value = nil,
+    Callback = function(name)
+        selectedTargetPlayer = nil
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p.Name == name then
+                selectedTargetPlayer = p
+                break
+            end
+        end
+    end,
+})
+
+PlayerTab:Button({
+    Title = "刷新玩家列表",
+    Desc = "重新检测本服务器当前玩家",
+    Callback = function()
+        local names = getPlayerNames()
+        pcall(function() playerDropdown:Refresh(names) end)
+        WindUI:Notify({ Title = "玩家选项", Content = "已刷新玩家列表，共 " .. #names .. " 名玩家", Duration = 3, Icon = "refresh-cw" })
+    end,
+})
+
+PlayerTab:Slider({
+    Title = "传送距离",
+    Desc = "调整目标玩家传送过来时与你的距离（格）",
+    Step = 1,
+    Value = { Min = 1, Max = 50, Default = 5 },
+    Callback = function(value)
+        teleportDistance = value
+    end,
+})
+
+local function teleportTargetOnce()
+    if not selectedTargetPlayer then return false end
+    if selectedTargetPlayer == LocalPlayer then return false end
+
+    local myChar = LocalPlayer.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return false end
+
+    local targetChar = selectedTargetPlayer.Character
+    local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+    if not targetRoot then return false end
+
+    pcall(function() targetRoot:SetNetworkOwner(LocalPlayer) end)
+
+    local myLook = myRoot.CFrame.LookVector
+    local targetPos = myRoot.Position + myLook * teleportDistance + Vector3.new(0, 3, 0)
+
+    local rotationOnly = targetRoot.CFrame - targetRoot.Position
+    pcall(function()
+        targetRoot.CFrame = CFrame.new(targetPos) * rotationOnly
+    end)
+    return true
+end
+
+PlayerTab:Button({
+    Title = "传送过来（单次）",
+    Desc = "将选中玩家瞬间传送到你附近",
+    Callback = function()
+        if teleportTargetOnce() then
+            WindUI:Notify({ Title = "玩家选项", Content = "已传送 " .. selectedTargetPlayer.Name, Duration = 3, Icon = "arrow-down" })
+        else
+            WindUI:Notify({ Title = "玩家选项", Content = "传送失败：请先选择玩家，或角色尚未加载", Duration = 3, Icon = "alert-circle" })
+        end
+    end,
+})
+
+PlayerTab:Toggle({
+    Title = "循环传送",
+    Desc = "开启后持续将选中玩家传送到你附近",
+    Value = false,
+    Callback = function(state)
+        loopTeleportEnabled = state
+        if loopTeleportConn then
+            loopTeleportConn:Disconnect()
+            loopTeleportConn = nil
+        end
+        if not state then return end
+        loopTeleportConn = RunService.Heartbeat:Connect(function()
+            if not loopTeleportEnabled then return end
+            if selectedTargetPlayer then
+                pcall(teleportTargetOnce)
+            end
+        end)
+    end,
+})
+
+PlayerTab:Toggle({
+    Title = "旋转玩家",
+    Desc = "让选中玩家持续快速旋转",
+    Value = false,
+    Callback = function(state)
+        rotateEnabled = state
+        if rotateConn then
+            rotateConn:Disconnect()
+            rotateConn = nil
+        end
+        if not state then
+            if selectedTargetPlayer then
+                local char = selectedTargetPlayer.Character
+                if char then
+                    for _, part in ipairs(char:GetDescendants()) do
+                        if part:IsA("BasePart") then
+                            pcall(function() part.AssemblyAngularVelocity = Vector3.zero end)
+                        end
+                    end
+                end
+            end
+            return
+        end
+        rotateConn = RunService.Heartbeat:Connect(function()
+            if not rotateEnabled or not selectedTargetPlayer then return end
+            local char = selectedTargetPlayer.Character
+            if not char then return end
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    pcall(function()
+                        part.AssemblyAngularVelocity = Vector3.new(
+                            math.random(-50, 50),
+                            500,
+                            math.random(-50, 50)
+                        )
+                    end)
+                end
+            end
+        end)
+    end,
+})
+
+Players.PlayerAdded:Connect(function()
+    task.wait(0.3)
+    pcall(function() playerDropdown:Refresh(getPlayerNames()) end)
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    if player == selectedTargetPlayer then
+        selectedTargetPlayer = nil
+    end
+    task.wait(0.3)
+    pcall(function() playerDropdown:Refresh(getPlayerNames()) end)
+end)
+
+-- ==================== 通用功能 ====================
+local UtilityTab = Window:Tab({ Title = "通用功能", Icon = "sliders-horizontal" })
+UtilityTab:Section({ Title = "控制开关" })
+
+local touchFlingEnabled = false
+local touchFlingConn = nil
+local flingBusy = false
+
+local function feFling(targetPlayer, duration)
+    if flingBusy then return end
+    if not targetPlayer or targetPlayer == LocalPlayer then return end
+    local targetChar = targetPlayer.Character
+    local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+    if not targetRoot then return end
+
+    local myChar = LocalPlayer.Character
+    local hum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+    local root = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not (myChar and hum and root) then return end
+
+    flingBusy = true
+    local savedCFrame = root.CFrame
+    local savedWS, savedJP = hum.WalkSpeed, hum.JumpPower
+
+    pcall(function() hum.Sit = true end)
+    hum.WalkSpeed = 0
+    hum.JumpPower = 0
+
+    local massBackup = {}
+    for _, part in ipairs(myChar:GetDescendants()) do
+        if part:IsA("BasePart") then
+            massBackup[part] = part.Massless
+            part.Massless = true
+            part.CanCollide = false
+        end
+    end
+
+    local BIG = 9e7
+    local t0 = tick()
+    while tick() - t0 < (duration or 0.35) do
+        if not targetRoot.Parent or not root.Parent then break end
+        for _, part in ipairs(myChar:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.AssemblyLinearVelocity = Vector3.new(
+                    math.random(-BIG, BIG), BIG, math.random(-BIG, BIG)
+                )
+                part.AssemblyAngularVelocity = Vector3.new(
+                    math.random(-BIG, BIG), math.random(-BIG, BIG), math.random(-BIG, BIG)
+                )
+            end
+        end
+        pcall(function()
+            root.CFrame = targetRoot.CFrame + Vector3.new(0, 0.5, 0)
+        end)
+        RunService.Heartbeat:Wait()
+    end
+
+    for part, was in pairs(massBackup) do
+        if part.Parent then
+            part.Massless = was or false
+            part.CanCollide = true
+        end
+    end
+
+    pcall(function()
+        for _, part in ipairs(myChar:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.AssemblyLinearVelocity = Vector3.zero
+                part.AssemblyAngularVelocity = Vector3.zero
+            end
+        end
+        hum.Sit = false
+        hum.WalkSpeed = savedWS
+        hum.JumpPower = savedJP
+        root.CFrame = savedCFrame
+    end)
+
+    flingBusy = false
+end
+
+UtilityTab:Toggle({
+    Title = "触摸甩飞（静默甩飞）",
+    Desc = "开启后，附近其他玩家会被静默甩飞，自身绝对不受反作用力影响。",
+    Value = false,
+    Callback = function(state)
+        touchFlingEnabled = state
+        if touchFlingConn then touchFlingConn:Disconnect() touchFlingConn = nil end
+        if not touchFlingEnabled then return end
+
+        touchFlingConn = RunService.Heartbeat:Connect(function()
+            if not touchFlingEnabled or flingBusy then return end
+            local myChar = LocalPlayer.Character
+            local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+            if not myRoot then return end
+
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player == LocalPlayer then continue end
+                local char = player.Character
+                local root = char and char:FindFirstChild("HumanoidRootPart")
+                if not root then continue end
+                if (root.Position - myRoot.Position).Magnitude <= 15 then
+                    task.spawn(feFling, player, 0.35)
+                    break
+                end
+            end
+        end)
+    end,
+})
+
+local noclipConn = nil
+UtilityTab:Toggle({
+    Title = "穿墙",
+    Desc = "开启后角色无视碰撞，可以穿过墙壁；重生后自动保持。",
+    Value = false,
+    Callback = function(state)
+        noclipEnabled = state
+        if noclipConn then noclipConn:Disconnect() noclipConn = nil end
+
+        local function apply(flag)
+            local char = LocalPlayer.Character
+            if not char then return end
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then part.CanCollide = not flag end
+            end
+        end
+
+        if not noclipEnabled then apply(false) return end
+        apply(true)
+        noclipConn = RunService.Stepped:Connect(function()
+            if not noclipEnabled then
+                if noclipConn then noclipConn:Disconnect() end
+                noclipConn = nil
+                return
+            end
+            apply(true)
+        end)
+    end,
+})
+
+-- ==================== 设置 ====================
+local isDarkTheme = true
+local SettingsTab = Window:Tab({ Title = "设置", Icon = "settings" })
 SettingsTab:Section({ Title = "界面设置" })
 
 SettingsTab:Button({
     Title = "切换 深色 / 浅色 主题",
     Callback = function()
-        local current = WindUI:GetCurrentTheme()
-        local newTheme = (current == "Dark") and "Light" or "Dark"
-        pcall(function()
-            WindUI:SetTheme(newTheme)
-        end)
+        isDarkTheme = not isDarkTheme
+        pcall(function() WindUI:SetTheme(isDarkTheme and "Dark" or "Light") end)
     end,
 })
 
 SettingsTab:Button({
     Title = "关闭界面",
-    Callback = function()
-        pcall(function()
-            Window:Close()
-        end)
-    end,
+    Callback = function() pcall(function() Window:Close() end) end,
 })
 
 SettingsTab:Section({ Title = "使用提示" })
-
 SettingsTab:Paragraph({
     Title = "温馨提示",
-    Desc = "1. 本脚本需在执行器中运行\n2. 速度过高部分游戏可能被服务器拉回\n3. 角色重生后速度会自动恢复\n4. 遇到问题请重载脚本",
+    Desc = "1. 道具获取：点击“获取选中道具”会直接尝试把同名 Tool 克隆到你的 Backpack，同时触发游戏购买远程。\n2. 玩家选项：选择目标后可以单次传送、循环传送、调整距离、旋转玩家。\n3. 触摸甩飞采用静默甩飞原理，只变异自身，不会甩到自己。",
 })
 
+-- ==================== 关于 ====================
 local AboutTab = Window:Tab({ Title = "关于", Icon = "info" })
-
 AboutTab:Section({ Title = "脚本信息" })
-
 AboutTab:Paragraph({
     Title = "PLH 脚本",
-    Desc = "版本：v0.1.2\nUI 库：WindUI 1.0\n适配平台：Roblox\n当前功能：移动速度调整 + 飞行 + 寂寞甩飞",
+    Desc = "版本：v0.1.6\n功能：速度 / 飞行 / 寂寞甩飞 / 道具扫描获取 / 玩家选择传送 / 静默触摸甩飞 / 穿墙",
 })
 
-AboutTab:Paragraph({
-    Title = "更新计划",
-    Desc = "后续会陆续加入更多实用功能，敬请期待。",
-})
-
-WindUI:Notify({
-    Title = "PLH 脚本",
-    Content = "加载成功！版本 v0.1.2",
-    Duration = 5,
-    Icon = "check-circle",
-})
+WindUI:Notify({ Title = "PLH 脚本", Content = "加载成功！版本 v0.1.6", Duration = 5, Icon = "check-circle" })
