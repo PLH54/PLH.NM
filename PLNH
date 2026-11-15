@@ -57,10 +57,19 @@ LocalPlayer.CharacterAdded:Connect(function()
     reapplyNoclip()
 end)
 
+task.spawn(function()
+    RunService.Stepped:Connect(function()
+        pcall(function()
+            sethiddenproperty(LocalPlayer, "SimulationRadius", math.huge)
+            sethiddenproperty(LocalPlayer, "MaximumSimulationRadius", math.huge)
+        end)
+    end)
+end)
+
 local Window = WindUI:CreateWindow({
     Title = "PLH脚本",
     Icon = "rbxassetid://6031075931",
-    Author = "PLH | v0.2",
+    Author = "PLH | v0.28.9",
     Folder = "PLH",
     Size = UDim2.fromOffset(580, 460),
     Transparent = true,
@@ -683,6 +692,27 @@ UtilityTab:Toggle({
     end,
 })
 
+local healthLockEnabled = false
+local healthLockConn = nil
+UtilityTab:Toggle({
+    Title = "血量锁定（100%）",
+    Desc = "开启后自身血量一直锁定在满血 100%",
+    Value = false,
+    Callback = function(state)
+        healthLockEnabled = state
+        if healthLockConn then healthLockConn:Disconnect() healthLockConn = nil end
+        if not state then return end
+        healthLockConn = RunService.Stepped:Connect(function()
+            if not healthLockEnabled then return end
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health < hum.MaxHealth then
+                pcall(function() hum.Health = hum.MaxHealth end)
+            end
+        end)
+    end,
+})
+
 local EffectTab = Window:Tab({ Title = "特效功能", Icon = "sparkles" })
 EffectTab:Section({ Title = "角色特效" })
 
@@ -713,13 +743,13 @@ local function applyFire()
     if not char then return end
     for _, part in ipairs(char:GetDescendants()) do
         if part:IsA("BasePart") then
-            local fire = Instance.new("Fire")
-            fire.Name = "PLH_Fire"
-            fire.Heat = 5
-            fire.Size = 8
-            fire.Color = Color3.fromRGB(255, 120, 20)
-            fire.SecondaryColor = Color3.fromRGB(255, 60, 0)
-            fire.Parent = part
+            local fireFx = Instance.new("Fire")
+            fireFx.Name = "PLH_Fire"
+            fireFx.Heat = 5
+            fireFx.Size = 8
+            fireFx.Color = Color3.fromRGB(255, 120, 20)
+            fireFx.SecondaryColor = Color3.fromRGB(255, 60, 0)
+            fireFx.Parent = part
         end
     end
 end
@@ -881,6 +911,428 @@ SkyTab:Button({
     end,
 })
 
+local NPCTab = Window:Tab({ Title = "NPC操控", Icon = "crosshair" })
+
+local selectedNPC = nil
+local npcStopFlag = 0
+local velX, velY, velZ = 0, 100, 0
+local velRelative = false
+local cfX, cfY, cfZ = 0, 100, 0
+local cfRelative = false
+local dragSensitivity = 0.2
+local tripDuration = 3
+local spinSpeed = 4
+local danceSpeed = 6
+local specialSpeed = 15
+
+local function getSelectedNPC()
+    if selectedNPC and selectedNPC.Parent then
+        return selectedNPC
+    end
+    return nil
+end
+
+local function findClosestNPC()
+    local myChar = LocalPlayer.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
+    local dist = math.huge
+    local closest = nil
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("Model") and v ~= myChar then
+            local phrp = v:FindFirstChild("HumanoidRootPart")
+            local phum = v:FindFirstChildOfClass("Humanoid")
+            if phrp and phum then
+                local d = (myRoot.Position - phrp.Position).Magnitude
+                if d < dist and phum.Health > 0 and phrp.ReceiveAge == 0 then
+                    dist = d
+                    closest = v
+                end
+            end
+        end
+    end
+    return closest
+end
+
+NPCTab:Section({ Title = "目标选择" })
+
+NPCTab:Button({
+    Title = "选择最近的NPC",
+    Desc = "自动扫描并选中离你最近的NPC作为操控目标",
+    Callback = function()
+        local npc = findClosestNPC()
+        if npc then
+            selectedNPC = npc
+            WindUI:Notify({ Title = "NPC操控", Content = "已选中：" .. npc.Name, Duration = 3, Icon = "target" })
+        else
+            WindUI:Notify({ Title = "NPC操控", Content = "附近没有找到可操控的NPC", Duration = 3, Icon = "alert-circle" })
+        end
+    end,
+})
+
+NPCTab:Button({
+    Title = "停止当前NPC操作",
+    Desc = "中断所有正在执行的NPC操控循环",
+    Callback = function()
+        npcStopFlag += 1
+        WindUI:Notify({ Title = "NPC操控", Content = "已停止当前操作", Duration = 2, Icon = "square" })
+    end,
+})
+
+NPCTab:Section({ Title = "基础操作" })
+
+NPCTab:Button({
+    Title = "击杀选中NPC",
+    Desc = "让选中NPC立刻死亡",
+    Callback = function()
+        local t = getSelectedNPC()
+        if not t then
+            WindUI:Notify({ Title = "NPC操控", Content = "请先选择目标", Duration = 2, Icon = "alert-circle" })
+            return
+        end
+        local phum = t:FindFirstChildOfClass("Humanoid")
+        if phum then
+            pcall(function()
+                phum.Health = -1
+                phum:TakeDamage(9e9)
+                phum:ChangeState(Enum.HumanoidStateType.Dead)
+            end)
+            WindUI:Notify({ Title = "NPC操控", Content = "已击杀：" .. t.Name, Duration = 3, Icon = "skull" })
+        end
+    end,
+})
+
+NPCTab:Button({
+    Title = "删除选中NPC",
+    Desc = "把NPC传送到地图底部的销毁高度下",
+    Callback = function()
+        local t = getSelectedNPC()
+        if not t then
+            WindUI:Notify({ Title = "NPC操控", Content = "请先选择目标", Duration = 2, Icon = "alert-circle" })
+            return
+        end
+        local phrp = t:FindFirstChild("HumanoidRootPart")
+        local myChar = LocalPlayer.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if phrp and myRoot then
+            local height = workspace.FallenPartsDestroyHeight
+            local vec = Vector3.new(myRoot.Position.X, height, myRoot.Position.Z)
+            local dis = (myRoot.Position - vec).Magnitude
+            pcall(function() phrp.CFrame = phrp.CFrame * CFrame.new(0, (-dis) + 3, 0) end)
+            WindUI:Notify({ Title = "NPC操控", Content = "已尝试删除：" .. t.Name, Duration = 3, Icon = "trash-2" })
+        end
+    end,
+})
+
+NPCTab:Section({ Title = "速度设置（Velocity）" })
+
+NPCTab:Slider({
+    Title = "Velocity X",
+    Step = 1,
+    Value = { Min = -500, Max = 500, Default = 0 },
+    Callback = function(v) velX = v end,
+})
+
+NPCTab:Slider({
+    Title = "Velocity Y",
+    Step = 1,
+    Value = { Min = -500, Max = 500, Default = 100 },
+    Callback = function(v) velY = v end,
+})
+
+NPCTab:Slider({
+    Title = "Velocity Z",
+    Step = 1,
+    Value = { Min = -500, Max = 500, Default = 0 },
+    Callback = function(v) velZ = v end,
+})
+
+NPCTab:Toggle({
+    Title = "Velocity 相对模式",
+    Desc = "开启后基于NPC当前速度叠加，关闭则直接覆盖",
+    Value = false,
+    Callback = function(s) velRelative = s end,
+})
+
+NPCTab:Button({
+    Title = "应用 Velocity",
+    Desc = "将设置的速度应用到选中NPC身上",
+    Callback = function()
+        local t = getSelectedNPC()
+        if not t then
+            WindUI:Notify({ Title = "NPC操控", Content = "请先选择目标", Duration = 2, Icon = "alert-circle" })
+            return
+        end
+        local phrp = t:FindFirstChild("HumanoidRootPart")
+        if not phrp then return end
+        if velRelative then
+            phrp.Velocity = phrp.Velocity + Vector3.new(velX, velY, velZ)
+        else
+            phrp.Velocity = Vector3.new(velX, velY, velZ)
+        end
+        WindUI:Notify({ Title = "NPC操控", Content = "Velocity 已应用", Duration = 2, Icon = "zap" })
+    end,
+})
+
+NPCTab:Section({ Title = "拖拽（Drag）" })
+
+NPCTab:Slider({
+    Title = "拖拽灵敏度",
+    Desc = "数值越小跟踪镜头越慢越自然",
+    Step = 0.05,
+    Value = { Min = 0.05, Max = 1, Default = 0.2 },
+    Callback = function(v) dragSensitivity = v end,
+})
+
+NPCTab:Button({
+    Title = "拖拽NPC到镜头前",
+    Desc = "让NPC持续悬浮在你镜头前方",
+    Callback = function()
+        local t = getSelectedNPC()
+        if not t then
+            WindUI:Notify({ Title = "NPC操控", Content = "请先选择目标", Duration = 2, Icon = "alert-circle" })
+            return
+        end
+        local phrp = t:FindFirstChild("HumanoidRootPart")
+        local phum = t:FindFirstChildOfClass("Humanoid")
+        if not phrp or not phum then return end
+        local cam = workspace.CurrentCamera
+        npcStopFlag += 1
+        local id = npcStopFlag
+        task.spawn(function()
+            while t and t.Parent and id == npcStopFlag and phrp.Parent and phum.Parent and phum.Health > 0 and selectedNPC == t do
+                phrp.CFrame = phrp.CFrame:Lerp(cam.CFrame * CFrame.new(0, 0, -15), dragSensitivity)
+                phrp.Velocity = Vector3.new(0, 3, 0)
+                RunService.Heartbeat:Wait()
+            end
+        end)
+    end,
+})
+
+NPCTab:Section({ Title = "绊倒（Trip）" })
+
+NPCTab:Slider({
+    Title = "绊倒持续时间",
+    Step = 0.5,
+    Value = { Min = 0.5, Max = 10, Default = 3 },
+    Callback = function(v) tripDuration = v end,
+})
+
+NPCTab:Button({
+    Title = "绊倒NPC",
+    Desc = "让选中NPC进入 PlatformStand 状态无法行动",
+    Callback = function()
+        local t = getSelectedNPC()
+        if not t then
+            WindUI:Notify({ Title = "NPC操控", Content = "请先选择目标", Duration = 2, Icon = "alert-circle" })
+            return
+        end
+        local phum = t:FindFirstChildOfClass("Humanoid")
+        if not phum then return end
+        npcStopFlag += 1
+        local id = npcStopFlag
+        local start = tick()
+        task.spawn(function()
+            while t and t.Parent and id == npcStopFlag and phum.Parent and phum.Health > 0 and tick() - start < tripDuration do
+                phum.PlatformStand = true
+                RunService.Heartbeat:Wait()
+            end
+            if phum then phum.PlatformStand = false end
+        end)
+    end,
+})
+
+NPCTab:Section({ Title = "操控（Control）" })
+
+NPCTab:Button({
+    Title = "操控NPC移动",
+    Desc = "把NPC变成你的可操控角色，用方向键控制",
+    Callback = function()
+        local t = getSelectedNPC()
+        if not t then
+            WindUI:Notify({ Title = "NPC操控", Content = "请先选择目标", Duration = 2, Icon = "alert-circle" })
+            return
+        end
+        local myChar = LocalPlayer.Character
+        local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        local phum = t:FindFirstChildOfClass("Humanoid")
+        local phrp = t:FindFirstChild("HumanoidRootPart")
+        if not (myHum and myRoot and phum and phrp) then return end
+        local cam = workspace.CurrentCamera
+        npcStopFlag += 1
+        local id = npcStopFlag
+        local oldAnchor = myRoot.Anchored
+        local oldCamSubject = cam.CameraSubject
+        myRoot.Anchored = true
+        cam.CameraSubject = phum
+        task.spawn(function()
+            while t and t.Parent and id == npcStopFlag and phrp.Parent and phum.Parent and phum.Health > 0 do
+                if phum.WalkSpeed <= 0 then phum.WalkSpeed = 16 end
+                phum:MoveTo(phrp.Position + myHum.MoveDirection * 3)
+                phum.Jump = myHum.Jump
+                RunService.Heartbeat:Wait()
+            end
+            pcall(function()
+                myRoot.Anchored = oldAnchor
+                cam.CameraSubject = oldCamSubject
+            end)
+        end)
+    end,
+})
+
+NPCTab:Section({ Title = "旋转（Spin）" })
+
+NPCTab:Slider({
+    Title = "旋转速度",
+    Step = 1,
+    Value = { Min = 1, Max = 90, Default = 4 },
+    Callback = function(v) spinSpeed = v end,
+})
+
+NPCTab:Button({
+    Title = "旋转NPC",
+    Desc = "让选中NPC持续高速绕Y轴旋转",
+    Callback = function()
+        local t = getSelectedNPC()
+        if not t then
+            WindUI:Notify({ Title = "NPC操控", Content = "请先选择目标", Duration = 2, Icon = "alert-circle" })
+            return
+        end
+        local phrp = t:FindFirstChild("HumanoidRootPart")
+        if not phrp then return end
+        npcStopFlag += 1
+        local id = npcStopFlag
+        task.spawn(function()
+            while t and t.Parent and id == npcStopFlag and phrp.Parent do
+                phrp.CFrame = phrp.CFrame * CFrame.Angles(0, math.rad(spinSpeed), 0)
+                RunService.Heartbeat:Wait()
+            end
+        end)
+    end,
+})
+
+NPCTab:Section({ Title = "位置设置（CFrame）" })
+
+NPCTab:Slider({
+    Title = "位置 X",
+    Step = 1,
+    Value = { Min = -1000, Max = 1000, Default = 0 },
+    Callback = function(v) cfX = v end,
+})
+
+NPCTab:Slider({
+    Title = "位置 Y",
+    Step = 1,
+    Value = { Min = -1000, Max = 1000, Default = 100 },
+    Callback = function(v) cfY = v end,
+})
+
+NPCTab:Slider({
+    Title = "位置 Z",
+    Step = 1,
+    Value = { Min = -1000, Max = 1000, Default = 0 },
+    Callback = function(v) cfZ = v end,
+})
+
+NPCTab:Toggle({
+    Title = "CFrame 相对模式",
+    Desc = "开启后基于NPC当前位置叠加，关闭则直接传送",
+    Value = false,
+    Callback = function(s) cfRelative = s end,
+})
+
+NPCTab:Button({
+    Title = "应用 CFrame",
+    Desc = "把设置的坐标应用到选中NPC",
+    Callback = function()
+        local t = getSelectedNPC()
+        if not t then
+            WindUI:Notify({ Title = "NPC操控", Content = "请先选择目标", Duration = 2, Icon = "alert-circle" })
+            return
+        end
+        local phrp = t:FindFirstChild("HumanoidRootPart")
+        if not phrp then return end
+        if cfRelative then
+            phrp.CFrame = phrp.CFrame * CFrame.new(cfX, cfY, cfZ)
+        else
+            phrp.CFrame = CFrame.new(cfX, cfY, cfZ)
+        end
+        WindUI:Notify({ Title = "NPC操控", Content = "位置已应用", Duration = 2, Icon = "move" })
+    end,
+})
+
+NPCTab:Section({ Title = "趣味动画" })
+
+NPCTab:Slider({
+    Title = "舞蹈速度",
+    Step = 1,
+    Value = { Min = 1, Max = 20, Default = 6 },
+    Callback = function(v) danceSpeed = v end,
+})
+
+NPCTab:Button({
+    Title = "跳舞动画（Lil Dance）",
+    Desc = "让NPC原地摇摆跳舞",
+    Callback = function()
+        local t = getSelectedNPC()
+        if not t then
+            WindUI:Notify({ Title = "NPC操控", Content = "请先选择目标", Duration = 2, Icon = "alert-circle" })
+            return
+        end
+        local phrp = t:FindFirstChild("HumanoidRootPart")
+        local phum = t:FindFirstChildOfClass("Humanoid")
+        if not phrp or not phum then return end
+        local oldpos = phrp.CFrame
+        npcStopFlag += 1
+        local id = npcStopFlag
+        task.spawn(function()
+            while t and t.Parent and id == npcStopFlag and phrp.Parent and phum.Parent and phum.Health > 0 do
+                phrp.CFrame = oldpos * CFrame.Angles(math.cos(tick() * 2) / 2, 0, math.sin(tick() * danceSpeed) / 3)
+                phrp.Velocity = Vector3.new(0, 3, 0)
+                phum.PlatformStand = true
+                RunService.Heartbeat:Wait()
+            end
+            if phum then phum.PlatformStand = false end
+        end)
+    end,
+})
+
+NPCTab:Slider({
+    Title = "特殊动作速度",
+    Step = 1,
+    Value = { Min = 1, Max = 30, Default = 15 },
+    Callback = function(v) specialSpeed = v end,
+})
+
+NPCTab:Button({
+    Title = "特殊动作",
+    Desc = "让NPC跟随你身前做特殊动作",
+    Callback = function()
+        local t = getSelectedNPC()
+        if not t then
+            WindUI:Notify({ Title = "NPC操控", Content = "请先选择目标", Duration = 2, Icon = "alert-circle" })
+            return
+        end
+        local phrp = t:FindFirstChild("HumanoidRootPart")
+        local phum = t:FindFirstChildOfClass("Humanoid")
+        local myChar = LocalPlayer.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        if not (phrp and phum and myRoot) then return end
+        npcStopFlag += 1
+        local id = npcStopFlag
+        task.spawn(function()
+            while t and t.Parent and id == npcStopFlag and phrp.Parent and phum.Parent and phum.Health > 0 do
+                phrp.CFrame = myRoot.CFrame * CFrame.new(0, -1.2, -(1.5 + math.abs(math.sin(tick() * specialSpeed)))) * CFrame.Angles(math.rad(-90), 0, 0)
+                phrp.Velocity = Vector3.new(0, 3, 0)
+                phum.PlatformStand = true
+                RunService.Heartbeat:Wait()
+            end
+            if phum then phum.PlatformStand = false end
+        end)
+    end,
+})
+
 local isDarkTheme = true
 local SettingsTab = Window:Tab({ Title = "设置", Icon = "settings" })
 SettingsTab:Section({ Title = "界面设置" })
@@ -901,18 +1353,23 @@ SettingsTab:Button({
 SettingsTab:Section({ Title = "使用提示" })
 SettingsTab:Paragraph({
     Title = "温馨提示",
-    Desc = "1. 道具获取：点击“获取选中道具”会直接尝试把同名 Tool 克隆到你的 Backpack，同时触发游戏购买远程。\n2. 玩家选项：选择目标后可以单次传送、循环传送、调整距离、旋转玩家。\n3. 触摸甩飞采用静默甩飞原理，只变异自身，不会甩到自己。\n4. 特效功能：火焰 / 冰霜特效可随时开启或关闭。\n5. 天空修改：可选择漫画 / 黑暗风格，也可以自定义天空颜色。",
+    Desc = "1. 道具获取：点击“获取选中道具”会直接尝试把同名 Tool 克隆到你的 Backpack，同时触发游戏购买远程。\n2. 玩家选项：选择目标后可以单次传送、循环传送、调整距离、旋转玩家。\n3. 触摸甩飞采用静默甩飞原理，只变异自身，不会甩到自己。\n4. 血量锁定：开启后自身血量持续锁定满血，重生后自动保持。\n5. NPC操控：先点击“选择最近的NPC”，再使用击杀/删除/速度/拖拽/绊倒/操控/旋转/位置/动画等操作。\n6. 特效功能：火焰 / 冰霜特效可随时开启或关闭。\n7. 天空修改：可选择漫画 / 黑暗风格，也可以自定义天空颜色。",
 })
 
 local AboutTab = Window:Tab({ Title = "关于", Icon = "info" })
 AboutTab:Section({ Title = "脚本信息" })
 AboutTab:Paragraph({
     Title = "PLH 脚本",
-    Desc = "版本：v0.2\n功能：速度 / 飞行 / 寂寞甩飞 / 道具扫描获取 / 玩家选择传送 / 静默触摸甩飞 / 隐身 / 穿墙 / 角色特效 / 天空修改",
+    Desc = "版本：v0.28.9\n功能：速度 / 飞行 / 寂寞甩飞 / 道具扫描获取 / 玩家选择传送 / 静默触摸甩飞 / 隐身 / 穿墙 / 血量锁定 / 角色特效 / 天空修改 / NPC操控",
+})
+AboutTab:Section({ Title = "NPC操控功能简介" })
+AboutTab:Paragraph({
+    Title = "NPC操控",
+    Desc = "选择最近的NPC作为目标后，可以执行以下操作：\n1. 击杀：直接让目标死亡。\n2. 删除：把目标传送到地图销毁高度以下。\n3. Velocity：给目标施加速度，支持相对/绝对模式。\n4. Drag：把目标持续拖拽到镜头前方悬浮。\n5. Trip：让目标进入 PlatformStand 状态，暂时无法行动。\n6. Control：接管目标，把方向键输入转为对目标移动控制。\n7. Spin：让目标高速绕Y轴旋转。\n8. CFrame：把目标传送到指定坐标，支持相对/绝对模式。\n9. Lil Dance：让目标原地摇摆跳舞。\n10. 特殊动作：让目标跟随你身前做特殊动画。\n11. 停止：随时中断当前所有NPC操控循环。\n另外脚本会自动开启无限 SimulationRadius，让远程NPC可见可操控。",
 })
 AboutTab:Paragraph({
     Title = "关于作者",
     Desc = "作者：Trmokih@Trmokih",
 })
 
-WindUI:Notify({ Title = "PLH 脚本", Content = "加载成功！版本 v0.2", Duration = 5, Icon = "check-circle" })
+WindUI:Notify({ Title = "PLH 脚本", Content = "加载成功！版本 v0.28.9", Duration = 5, Icon = "check-circle" })
