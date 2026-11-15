@@ -138,7 +138,7 @@ end)
 local Window = WindUI:CreateWindow({
     Title = "PLH脚本",
     Icon = "rbxassetid://6031075931",
-    Author = "PLH | v0.45.6",
+    Author = "PLH | v0.56.8",
     Folder = "PLH",
     Size = UDim2.fromOffset(580, 460),
     Transparent = true,
@@ -198,12 +198,10 @@ end
 local function stopFly()
     if not flying and not flyGui then return end
     flying = false
-
     if flyConn then
         flyConn:Disconnect()
         flyConn = nil
     end
-
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     if hrp then
@@ -212,24 +210,19 @@ local function stopFly()
         local bg = hrp:FindFirstChild("PLH_FlyGyro")
         if bg then bg:Destroy() end
     end
-
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if hum then
         hum.WalkSpeed = savedFlyWalkSpeed or currentSpeed
     end
     savedFlyWalkSpeed = nil
-
     for k in pairs(flyHeld) do flyHeld[k] = false end
-
     destroyFlyUI()
-
     WindUI:Notify({ Title = "飞行", Content = "飞行已关闭", Duration = 2, Icon = "plane" })
 end
 
 local function buildFlyUI()
     if flyGui then return end
     local playerGui = LocalPlayer:WaitForChild("PlayerGui")
-
     local sg = Instance.new("ScreenGui")
     sg.Name = "PLH_FlyUI"
     sg.ResetOnSpawn = false
@@ -294,17 +287,14 @@ local function buildFlyUI()
         btn.TextSize = 22
         btn.BorderSizePixel = 0
         btn.Parent = main
-
         local c = Instance.new("UICorner")
         c.CornerRadius = UDim.new(0, 10)
         c.Parent = btn
-
         local s = Instance.new("UIStroke")
         s.Color = Color3.fromRGB(100, 140, 255)
         s.Thickness = 1.5
         s.Transparency = 0.5
         s.Parent = btn
-
         local function press()
             flyHeld[dirKey] = true
             btn.BackgroundColor3 = Color3.fromRGB(80, 110, 200)
@@ -313,7 +303,6 @@ local function buildFlyUI()
             flyHeld[dirKey] = false
             btn.BackgroundColor3 = Color3.fromRGB(45, 50, 75)
         end
-
         btn.MouseButton1Down:Connect(press)
         btn.MouseButton1Up:Connect(release)
         btn.MouseLeave:Connect(release)
@@ -329,7 +318,6 @@ local function buildFlyUI()
     makeBtn("↓", UDim2.fromOffset(90, 190), "down")
     makeBtn("前", UDim2.fromOffset(15, 260), "forward")
     makeBtn("后", UDim2.fromOffset(165, 260), "backward")
-
     flyGui = sg
 end
 
@@ -345,7 +333,6 @@ local function startFly()
         WindUI:Notify({ Title = "飞行", Content = "角色尚未加载", Duration = 3, Icon = "alert-circle" })
         return
     end
-
     flying = true
     savedFlyWalkSpeed = hum.WalkSpeed
     hum.WalkSpeed = 0
@@ -365,7 +352,6 @@ local function startFly()
     bg.Parent = hrp
 
     buildFlyUI()
-
     flyConn = RunService.Heartbeat:Connect(function()
         if not flying then return end
         local c = LocalPlayer.Character
@@ -374,7 +360,6 @@ local function startFly()
         local v = h:FindFirstChild("PLH_FlyVelocity")
         local g = h:FindFirstChild("PLH_FlyGyro")
         if not v or not g then return end
-
         local cam = workspace.CurrentCamera
         local dir = Vector3.zero
         if flyHeld.up then dir = dir + Vector3.new(0, 1, 0) end
@@ -383,11 +368,9 @@ local function startFly()
         if flyHeld.right then dir = dir + cam.CFrame.RightVector end
         if flyHeld.forward then dir = dir + cam.CFrame.LookVector end
         if flyHeld.backward then dir = dir - cam.CFrame.LookVector end
-
         v.Velocity = (dir.Magnitude > 0) and (dir.Unit * flySpeed) or Vector3.zero
         g.CFrame = cam.CFrame
     end)
-
     WindUI:Notify({ Title = "飞行", Content = "飞行已开启！使用屏幕按钮控制方向", Duration = 3, Icon = "plane" })
 end
 
@@ -560,7 +543,6 @@ ItemTab:Button({
             WindUI:Notify({ Title = "道具扫描", Content = "未找到物品文件夹。请先在游戏里手动购买一次任意道具，再点此按钮。", Duration = 8, Icon = "search-x" })
             return
         end
-
         scannedItems = {}
         local seenNames = {}
         for _, container in ipairs(containers) do
@@ -571,12 +553,10 @@ ItemTab:Button({
                 end
             end
         end
-
         if #scannedItems == 0 then
             WindUI:Notify({ Title = "道具扫描", Content = "找到了文件夹，但里面没有物品。", Duration = 5, Icon = "search-x" })
             return
         end
-
         scannedRemotes = {}
         for remote in pairs(capturedBuyRemotes) do
             table.insert(scannedRemotes, remote)
@@ -591,21 +571,17 @@ ItemTab:Button({
                 end
             end
         end
-
         local names = {}
         for _, e in ipairs(scannedItems) do
             table.insert(names, e.name)
         end
-
         pcall(function() itemDropdown:Refresh(names) end)
-
         local content
         if #scannedRemotes == 0 then
             content = string.format("扫描到 %d 个道具，但未找到购买远程。获取时仍会尝试直接放入背包。", #scannedItems)
         else
             content = string.format("扫描完成！道具 %d 个，购买远程 %d 个。", #scannedItems, #scannedRemotes)
         end
-
         WindUI:Notify({ Title = "道具扫描", Content = content, Duration = 6, Icon = "search-check" })
     end,
 })
@@ -657,7 +633,6 @@ end
 local function tryFireRemotes(itemName)
     local sent = 0
     if #scannedRemotes == 0 then return sent end
-
     local payloads = {
         { itemName },
         { itemName, 1 },
@@ -666,7 +641,6 @@ local function tryFireRemotes(itemName)
         { "Buy", itemName },
         { itemName, true },
     }
-
     for _, remote in ipairs(scannedRemotes) do
         for _, args in ipairs(payloads) do
             local ok2 = pcall(function()
@@ -692,10 +666,8 @@ ItemTab:Button({
             WindUI:Notify({ Title = "道具获取", Content = "请先扫描并选择道具。", Duration = 4, Icon = "alert-circle" })
             return
         end
-
         local placed = placeItemInBackpack(name)
         local sent = tryFireRemotes(name)
-
         if placed and sent > 0 then
             WindUI:Notify({ Title = "道具获取", Content = "「" .. name .. "」已放进背包，并触发 " .. sent .. " 次远程。", Duration = 5, Icon = "check-circle" })
         elseif placed then
@@ -716,7 +688,6 @@ ItemTab:Button({
             WindUI:Notify({ Title = "道具获取", Content = "请先点击“扫描全游戏道具”。", Duration = 4, Icon = "alert-circle" })
             return
         end
-
         local placedCount = 0
         local sentCount = 0
         for _, entry in ipairs(scannedItems) do
@@ -724,7 +695,6 @@ ItemTab:Button({
             sentCount = sentCount + tryFireRemotes(entry.name)
             task.wait(0.05)
         end
-
         WindUI:Notify({
             Title = "道具获取",
             Content = string.format("已放入背包 %d 个，触发远程 %d 次。", placedCount, sentCount),
@@ -782,7 +752,7 @@ PlayerTab:Button({
 
 PlayerTab:Slider({
     Title = "传送距离",
-    Desc = "调整目标玩家传送过来时与你的距离（格）",
+    Desc = "调整传送时与目标玩家的距离（格）",
     Step = 1,
     Value = { Min = 1, Max = 50, Default = 5 },
     Callback = function(value)
@@ -793,20 +763,15 @@ PlayerTab:Slider({
 local function teleportTargetOnce()
     if not selectedTargetPlayer then return false end
     if selectedTargetPlayer == LocalPlayer then return false end
-
     local myChar = LocalPlayer.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
     if not myRoot then return false end
-
     local targetChar = selectedTargetPlayer.Character
     local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
     if not targetRoot then return false end
-
     pcall(function() targetRoot:SetNetworkOwner(LocalPlayer) end)
-
     local myLook = myRoot.CFrame.LookVector
     local targetPos = myRoot.Position + myLook * teleportDistance + Vector3.new(0, 3, 0)
-
     local rotationOnly = targetRoot.CFrame - targetRoot.Position
     pcall(function()
         targetRoot.CFrame = CFrame.new(targetPos) * rotationOnly
@@ -888,6 +853,197 @@ PlayerTab:Toggle({
     end,
 })
 
+PlayerTab:Section({ Title = "传送到目标玩家旁边" })
+
+local function getSelfHRP()
+    local char = LocalPlayer.Character
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function getTargetHRP()
+    if not selectedTargetPlayer then return nil end
+    local char = selectedTargetPlayer.Character
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function teleportSelfToTarget()
+    local myRoot = getSelfHRP()
+    local targetRoot = getTargetHRP()
+    if not myRoot or not targetRoot then return false end
+    local offset = targetRoot.CFrame.LookVector * teleportDistance + Vector3.new(0, 3, 0)
+    local rotationOnly = myRoot.CFrame - myRoot.Position
+    pcall(function()
+        myRoot.CFrame = CFrame.new(targetRoot.Position + offset) * rotationOnly
+    end)
+    return true
+end
+
+PlayerTab:Button({
+    Title = "传送到玩家旁边（单次）",
+    Desc = "把你自己瞬间传送到选中玩家旁边，距离由上方“传送距离”控制",
+    Callback = function()
+        if teleportSelfToTarget() then
+            WindUI:Notify({ Title = "玩家选项", Content = "已传送到 " .. selectedTargetPlayer.Name .. " 旁边", Duration = 3, Icon = "arrow-up" })
+        else
+            WindUI:Notify({ Title = "玩家选项", Content = "传送失败：请先选择玩家，或角色尚未加载", Duration = 3, Icon = "alert-circle" })
+        end
+    end,
+})
+
+local loopSelfTeleportEnabled = false
+local loopSelfTeleportConn = nil
+
+PlayerTab:Toggle({
+    Title = "循环传送到玩家旁边",
+    Desc = "开启后持续把你自己传送到选中玩家旁边，关闭后停止",
+    Value = false,
+    Callback = function(state)
+        loopSelfTeleportEnabled = state
+        if loopSelfTeleportConn then
+            loopSelfTeleportConn:Disconnect()
+            loopSelfTeleportConn = nil
+        end
+        if not state then
+            WindUI:Notify({ Title = "玩家选项", Content = "循环自身传送已停止", Duration = 2, Icon = "square" })
+            return
+        end
+        loopSelfTeleportConn = RunService.Heartbeat:Connect(function()
+            if not loopSelfTeleportEnabled then return end
+            if selectedTargetPlayer then
+                pcall(teleportSelfToTarget)
+            end
+        end)
+        WindUI:Notify({ Title = "玩家选项", Content = "循环自身传送已开启", Duration = 3, Icon = "refresh-cw" })
+    end,
+})
+
+PlayerTab:Section({ Title = "环绕选中玩家" })
+
+local orbitRadius = 10
+local orbitSpeed = 90
+local orbitEnabled = false
+local orbitConn = nil
+local orbitAngle = 0
+local orbitLockedRotation = nil
+local orbitRadiusSlider = nil
+local orbitRadiusInput = nil
+
+local function stopOrbit(silent)
+    local wasRunning = orbitEnabled
+    orbitEnabled = false
+    if orbitConn then
+        orbitConn:Disconnect()
+        orbitConn = nil
+    end
+    if not silent and wasRunning then
+        WindUI:Notify({ Title = "环绕玩家", Content = "环绕已停止", Duration = 2, Icon = "square" })
+    end
+end
+
+orbitRadiusSlider = PlayerTab:Slider({
+    Title = "环绕半径（滑动）",
+    Desc = "设置环绕选中玩家时的圆周半径（格）",
+    Step = 1,
+    Value = { Min = 1, Max = 200, Default = 10 },
+    Callback = function(v)
+        orbitRadius = v
+        if orbitRadiusInput and orbitRadiusInput.Set then
+            pcall(function() orbitRadiusInput:Set(tostring(v)) end)
+        end
+    end,
+})
+
+orbitRadiusInput = PlayerTab:Input({
+    Title = "环绕半径（输入）",
+    Desc = "输入环绕半径后点击“开始环绕”生效（范围 1 - 200）",
+    Value = "10",
+    Placeholder = "输入半径 1 - 200",
+    Callback = function(text)
+        local n = tonumber(text)
+        if n then
+            n = math.clamp(math.floor(n + 0.5), 1, 200)
+            orbitRadius = n
+            if orbitRadiusSlider and orbitRadiusSlider.Set then
+                pcall(function() orbitRadiusSlider:Set(n) end)
+            end
+        end
+    end,
+})
+
+PlayerTab:Slider({
+    Title = "环绕速度（度/秒）",
+    Desc = "设置环绕的角速度，数值越大转得越快",
+    Step = 5,
+    Value = { Min = 10, Max = 720, Default = 90 },
+    Callback = function(v) orbitSpeed = v end,
+})
+
+PlayerTab:Button({
+    Title = "开始环绕选中玩家",
+    Desc = "先把你传送到选中玩家旁边，然后按当前半径和速度开始环绕",
+    Callback = function()
+        if not selectedTargetPlayer then
+            WindUI:Notify({ Title = "环绕玩家", Content = "请先选择目标玩家", Duration = 3, Icon = "alert-circle" })
+            return
+        end
+        local targetRoot = getTargetHRP()
+        if not targetRoot then
+            WindUI:Notify({ Title = "环绕玩家", Content = "目标玩家角色未加载", Duration = 3, Icon = "alert-circle" })
+            return
+        end
+        local myRoot = getSelfHRP()
+        if not myRoot then
+            WindUI:Notify({ Title = "环绕玩家", Content = "你的角色未加载", Duration = 3, Icon = "alert-circle" })
+            return
+        end
+        stopOrbit(true)
+        orbitEnabled = true
+        orbitAngle = 0
+        orbitLockedRotation = myRoot.CFrame - myRoot.Position
+        pcall(teleportSelfToTarget)
+        orbitConn = RunService.Heartbeat:Connect(function(dt)
+            if not orbitEnabled then return end
+            local mRoot = getSelfHRP()
+            local tRoot = getTargetHRP()
+            if not mRoot or not tRoot then
+                stopOrbit(true)
+                WindUI:Notify({ Title = "环绕玩家", Content = "目标玩家角色丢失，环绕已自动停止", Duration = 3, Icon = "alert-circle" })
+                return
+            end
+            orbitAngle = orbitAngle + math.rad(orbitSpeed) * dt
+            if orbitAngle > math.rad(360) then orbitAngle = orbitAngle - math.rad(360) end
+            local offset = Vector3.new(
+                math.cos(orbitAngle) * orbitRadius,
+                3,
+                math.sin(orbitAngle) * orbitRadius
+            )
+            local newPos = tRoot.Position + offset
+            local rot = orbitLockedRotation or (mRoot.CFrame - mRoot.Position)
+            pcall(function()
+                mRoot.CFrame = CFrame.new(newPos) * rot
+            end)
+        end)
+        WindUI:Notify({
+            Title = "环绕玩家",
+            Content = string.format("开始环绕 %s｜半径 %d｜速度 %d°/s", selectedTargetPlayer.Name, orbitRadius, orbitSpeed),
+            Duration = 4,
+            Icon = "rotate-cw",
+        })
+    end,
+})
+
+PlayerTab:Button({
+    Title = "停止环绕",
+    Desc = "停止环绕选中玩家",
+    Callback = function()
+        if orbitEnabled then
+            stopOrbit(false)
+        else
+            WindUI:Notify({ Title = "环绕玩家", Content = "当前没有在环绕", Duration = 2, Icon = "info" })
+        end
+    end,
+})
+
 Players.PlayerAdded:Connect(function()
     task.wait(0.3)
     pcall(function() playerDropdown:Refresh(getPlayerNames()) end)
@@ -896,6 +1052,7 @@ end)
 Players.PlayerRemoving:Connect(function(player)
     if player == selectedTargetPlayer then
         selectedTargetPlayer = nil
+        stopOrbit(true)
     end
     task.wait(0.3)
     pcall(function() playerDropdown:Refresh(getPlayerNames()) end)
@@ -914,20 +1071,16 @@ local function feFling(targetPlayer, duration)
     local targetChar = targetPlayer.Character
     local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
     if not targetRoot then return end
-
     local myChar = LocalPlayer.Character
     local hum = myChar and myChar:FindFirstChildOfClass("Humanoid")
     local root = myChar and myChar:FindFirstChild("HumanoidRootPart")
     if not (myChar and hum and root) then return end
-
     flingBusy = true
     local savedCFrame = root.CFrame
     local savedWS, savedJP = hum.WalkSpeed, hum.JumpPower
-
     pcall(function() hum.Sit = true end)
     hum.WalkSpeed = 0
     hum.JumpPower = 0
-
     local massBackup = {}
     for _, part in ipairs(myChar:GetDescendants()) do
         if part:IsA("BasePart") then
@@ -936,7 +1089,6 @@ local function feFling(targetPlayer, duration)
             part.CanCollide = false
         end
     end
-
     local BIG = 9e7
     local t0 = tick()
     while tick() - t0 < (duration or 0.35) do
@@ -956,14 +1108,12 @@ local function feFling(targetPlayer, duration)
         end)
         RunService.Heartbeat:Wait()
     end
-
     for part, was in pairs(massBackup) do
         if part.Parent then
             part.Massless = was or false
             part.CanCollide = true
         end
     end
-
     pcall(function()
         for _, part in ipairs(myChar:GetDescendants()) do
             if part:IsA("BasePart") then
@@ -976,7 +1126,6 @@ local function feFling(targetPlayer, duration)
         hum.JumpPower = savedJP
         root.CFrame = savedCFrame
     end)
-
     flingBusy = false
 end
 
@@ -988,13 +1137,11 @@ UtilityTab:Toggle({
         touchFlingEnabled = state
         if touchFlingConn then touchFlingConn:Disconnect() touchFlingConn = nil end
         if not touchFlingEnabled then return end
-
         touchFlingConn = RunService.Heartbeat:Connect(function()
             if not touchFlingEnabled or flingBusy then return end
             local myChar = LocalPlayer.Character
             local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
             if not myRoot then return end
-
             for _, player in ipairs(Players:GetPlayers()) do
                 if player == LocalPlayer then continue end
                 local char = player.Character
@@ -1006,6 +1153,17 @@ UtilityTab:Toggle({
                 end
             end
         end)
+    end,
+})
+
+UtilityTab:Button({
+    Title = "无敌少能飞侠FE",
+    Desc = "加载 Invincible Flight R15 无敌飞行脚本",
+    Callback = function()
+        pcall(function()
+            loadstring(game:HttpGet("https://rawscripts.net/raw/Universal-Script-Invinicible-Flight-R15-45414"))()
+        end)
+        WindUI:Notify({ Title = "FE飞行", Content = "无敌少能飞侠FE脚本已加载", Duration = 4, Icon = "shield" })
     end,
 })
 
@@ -1028,7 +1186,6 @@ UtilityTab:Toggle({
     Callback = function(state)
         noclipEnabled = state
         if noclipConn then noclipConn:Disconnect() noclipConn = nil end
-
         local function apply(flag)
             local char = LocalPlayer.Character
             if not char then return end
@@ -1036,7 +1193,6 @@ UtilityTab:Toggle({
                 if part:IsA("BasePart") then part.CanCollide = not flag end
             end
         end
-
         if not noclipEnabled then apply(false) return end
         apply(true)
         noclipConn = RunService.Stepped:Connect(function()
@@ -2015,11 +2171,64 @@ NPCTab:Button({
 })
 
 local DefenseTab = Window:Tab({ Title = "防御功能", Icon = "shield" })
-DefenseTab:Section({ Title = "防御功能" })
+DefenseTab:Section({ Title = "防甩飞1.0" })
 
 DefenseTab:Paragraph({
-    Title = "🚧 功能未开发",
-    Desc = "防御功能目前还处于预告阶段，尚未开发完成，敬请期待后续版本更新。\n\n计划中的防御功能可能包含：\n· 反甩飞保护\n· 反传送保护\n· 反击杀保护\n· 无敌模式\n· 碰撞体保护\n\n请关注脚本更新，感谢支持！",
+    Title = "🛡️ 防甩飞1.0",
+    Desc = "开启后持续监控本角色各部件速度，将异常的线速度与角速度重置为安全值，抵消外部甩飞脚本对你施加的物理干扰。建议在公共服务器中默认开启。",
+})
+
+local antiFlingEnabled = false
+local antiFlingConn = nil
+local MAX_SAFE_VELOCITY = 150
+
+local function resetFlingVelocity()
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            local lin = part.AssemblyLinearVelocity
+            local ang = part.AssemblyAngularVelocity
+            if lin.Magnitude > MAX_SAFE_VELOCITY then
+                pcall(function()
+                    part.AssemblyLinearVelocity = Vector3.zero
+                end)
+            end
+            if ang.Magnitude > MAX_SAFE_VELOCITY then
+                pcall(function()
+                    part.AssemblyAngularVelocity = Vector3.zero
+                end)
+            end
+        end
+    end
+end
+
+DefenseTab:Toggle({
+    Title = "防甩飞1.0",
+    Desc = "持续检测并清零自身角色的异常速度，防止被他人甩飞",
+    Value = false,
+    Callback = function(state)
+        antiFlingEnabled = state
+        if antiFlingConn then
+            antiFlingConn:Disconnect()
+            antiFlingConn = nil
+        end
+        if not state then
+            WindUI:Notify({ Title = "防甩飞1.0", Content = "防甩飞已关闭", Duration = 2, Icon = "shield-off" })
+            return
+        end
+        antiFlingConn = RunService.Heartbeat:Connect(function()
+            if antiFlingEnabled then
+                pcall(resetFlingVelocity)
+            end
+        end)
+        WindUI:Notify({ Title = "防甩飞1.0", Content = "防甩飞已开启，正在监控角色速度", Duration = 3, Icon = "shield" })
+    end,
+})
+
+DefenseTab:Paragraph({
+    Title = "📋 开发计划",
+    Desc = "· 反传送保护\n· 反击杀保护\n· 无敌模式\n· 碰撞体保护\n\n请关注后续版本更新。",
 })
 
 local isDarkTheme = true
@@ -2042,28 +2251,24 @@ SettingsTab:Button({
 SettingsTab:Section({ Title = "使用提示" })
 SettingsTab:Paragraph({
     Title = "温馨提示",
-    Desc = "1. 顶部搜索栏：WindUI 内置搜索，可快速定位功能。\n2. 位置管理：保存当前位置并在需要时传送回去。\n3. 内置飞行：点击“开启飞行（自带）”后出现屏幕方向按钮，点 ✕ 关闭飞行。\n4. 自定义血量：滑动设置血量，点“应用血量”生效，点“恢复默认血量”复原。\n5. 无限跳：开启后可空中连续跳跃，关闭恢复默认。\n6. 跳跃高度：可调整角色跳跃最高高度，点“应用跳跃高度”生效。\n7. 帧率设置：滑条拉到 60 及以下会自动锁定；60 以上或输入框输入后需点“确认应用帧率上限”；锁帧会持续生效，点击“解除帧率锁定”可恢复。\n8. 血量锁定：开启后血量持续锁定为滑条设定值。\n9. 别的脚本：可加载黑白脚本、皮脚本、rb脚本中心。\n10. 防御功能目前仅为预告，尚未开发。",
+    Desc = "1. 顶部搜索栏：WindUI 内置搜索，可快速定位功能。\n2. 位置管理：保存当前位置并在需要时传送回去。\n3. 内置飞行：点击“开启飞行（自带）”后出现屏幕方向按钮，点 ✕ 关闭飞行。\n4. 自定义血量：滑动设置血量，点“应用血量”生效，点“恢复默认血量”复原。\n5. 无限跳：开启后可空中连续跳跃，关闭恢复默认。\n6. 跳跃高度：可调整角色跳跃最高高度，点“应用跳跃高度”生效。\n7. 帧率设置：滑条拉到 60 及以下会自动锁定；60 以上或输入框输入后需点“确认应用帧率上限”；锁帧会持续生效，点击“解除帧率锁定”可恢复。\n8. 血量锁定：开启后血量持续锁定为滑条设定值。\n9. 别的脚本：可加载黑白脚本、皮脚本、rb脚本中心。\n10. 无敌少能飞侠FE：在通用功能中，一键加载外部FE飞行脚本。\n11. 防甩飞1.0：在防御功能中开启，持续重置异常速度。\n12. 玩家选项新增：传送到玩家旁边（单次/循环）、环绕选中玩家（可设半径与速度）。",
 })
 
 local AboutTab = Window:Tab({ Title = "关于", Icon = "info" })
 AboutTab:Section({ Title = "脚本信息" })
 AboutTab:Paragraph({
     Title = "PLH 脚本",
-    Desc = "版本：v0.45.6\n功能：速度 / 自带飞行 / 寂寞甩飞 / 位置管理 / 道具扫描获取 / 玩家选择传送 / 静默触摸甩飞 / 隐身 / 穿墙 / 无限跳 / 跳跃高度 / 自定义血量 / 血量锁定 / 帧率上限 / 别的脚本加载 / 角色特效 / 天空修改 / NPC操控 / 防御功能预告 / WindUI 内置搜索",
+    Desc = "版本：v0.56.8\n功能：速度 / 自带飞行 / 无敌少能飞侠FE / 寂寞甩飞 / 位置管理 / 道具扫描获取 / 玩家选择传送 / 传送到玩家旁边 / 环绕玩家 / 静默触摸甩飞 / 隐身 / 穿墙 / 无限跳 / 跳跃高度 / 自定义血量 / 血量锁定 / 帧率上限 / 防甩飞1.0 / 别的脚本加载 / 角色特效 / 天空修改 / NPC操控",
 })
-AboutTab:Section({ Title = "v0.45.6 更新内容" })
+AboutTab:Section({ Title = "v0.56.8 更新内容" })
 AboutTab:Paragraph({
     Title = "本次更新",
-    Desc = "1. 帧率锁定修复：60 及以下滑条自动锁定\n2. 锁帧改为持续轮询，防止被游戏重置\n3. 输入框与滑条值自动同步\n4. 新增“解除帧率锁定”按钮\n5. 多层 setfpscap 兼容，支持更多执行器\n6. 新增跳跃高度设置\n7. 新增“别的脚本”标签页\n8. 新增“防御功能”标签页（预告）\n9. 移除全部代码注释",
+    Desc = "1. 玩家选项新增“传送到玩家旁边（单次）”\n2. 玩家选项新增“循环传送到玩家旁边”\n3. 玩家选项新增“环绕选中玩家”（滑条+输入设置半径、速度）\n4. 保留此前无敌少能飞侠FE与防甩飞1.0\n5. 版本号 v0.56.8",
 })
-AboutTab:Section({ Title = "NPC操控功能简介" })
+AboutTab:Section({ Title = "关于作者" })
 AboutTab:Paragraph({
-    Title = "NPC操控",
-    Desc = "选择最近的NPC作为目标后，可以执行击杀、删除、Velocity、Drag、Trip、Control、Spin、CFrame、Lil Dance、特殊动作等操作，随时可点击“停止”中断。",
-})
-AboutTab:Paragraph({
-    Title = "关于作者",
+    Title = "作者信息",
     Desc = "作者：Trmokih@Trmokih",
 })
 
-WindUI:Notify({ Title = "PLH 脚本", Content = "加载成功！版本 v0.45.6", Duration = 5, Icon = "check-circle" })
+WindUI:Notify({ Title = "PLH 脚本", Content = "加载成功！版本 v0.56.8", Duration = 5, Icon = "check-circle" })
