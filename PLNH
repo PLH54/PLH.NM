@@ -15,6 +15,7 @@ end
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local PhysicsService = game:GetService("PhysicsService")
+local Lighting = game:GetService("Lighting")
 local LocalPlayer = Players.LocalPlayer
 
 pcall(function()
@@ -59,7 +60,7 @@ end)
 local Window = WindUI:CreateWindow({
     Title = "PLH脚本",
     Icon = "rbxassetid://6031075931",
-    Author = "PLH | v0.1.6",
+    Author = "PLH | v0.2",
     Folder = "PLH",
     Size = UDim2.fromOffset(580, 460),
     Transparent = true,
@@ -112,7 +113,6 @@ MainTab:Button({
     end,
 })
 
--- ==================== 道具选项 ====================
 local ItemTab = Window:Tab({ Title = "道具选项", Icon = "box" })
 ItemTab:Section({ Title = "全游戏道具扫描与获取" })
 
@@ -367,7 +367,6 @@ ItemTab:Button({
     end,
 })
 
--- ==================== 玩家选项 ====================
 local PlayerTab = Window:Tab({ Title = "玩家选项", Icon = "users" })
 PlayerTab:Section({ Title = "选择目标玩家" })
 
@@ -535,7 +534,6 @@ Players.PlayerRemoving:Connect(function(player)
     pcall(function() playerDropdown:Refresh(getPlayerNames()) end)
 end)
 
--- ==================== 通用功能 ====================
 local UtilityTab = Window:Tab({ Title = "通用功能", Icon = "sliders-horizontal" })
 UtilityTab:Section({ Title = "控制开关" })
 
@@ -644,6 +642,17 @@ UtilityTab:Toggle({
     end,
 })
 
+UtilityTab:Button({
+    Title = "隐身（外部导入）",
+    Desc = "加载外部隐身脚本",
+    Callback = function()
+        pcall(function()
+            loadstring(game:HttpGet("https://pastebin.com/raw/Mwxbt9pp"))()
+        end)
+        WindUI:Notify({ Title = "PLH脚本", Content = "隐身脚本已加载", Duration = 4, Icon = "eye-off" })
+    end,
+})
+
 local noclipConn = nil
 UtilityTab:Toggle({
     Title = "穿墙",
@@ -674,7 +683,204 @@ UtilityTab:Toggle({
     end,
 })
 
--- ==================== 设置 ====================
+local EffectTab = Window:Tab({ Title = "特效功能", Icon = "sparkles" })
+EffectTab:Section({ Title = "角色特效" })
+
+local function clearFire()
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, obj in ipairs(char:GetDescendants()) do
+        if obj.Name == "PLH_Fire" then
+            pcall(function() obj:Destroy() end)
+        end
+    end
+end
+
+local function clearIce()
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, obj in ipairs(char:GetDescendants()) do
+        if obj.Name == "PLH_Ice" then
+            pcall(function() obj:Destroy() end)
+        end
+    end
+end
+
+local function applyFire()
+    clearFire()
+    clearIce()
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            local fire = Instance.new("Fire")
+            fire.Name = "PLH_Fire"
+            fire.Heat = 5
+            fire.Size = 8
+            fire.Color = Color3.fromRGB(255, 120, 20)
+            fire.SecondaryColor = Color3.fromRGB(255, 60, 0)
+            fire.Parent = part
+        end
+    end
+end
+
+local function applyIce()
+    clearFire()
+    clearIce()
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            local emit = Instance.new("ParticleEmitter")
+            emit.Name = "PLH_Ice"
+            emit.Texture = "rbxassetid://243660364"
+            emit.Rate = 25
+            emit.Lifetime = NumberRange.new(0.5, 1)
+            emit.Speed = NumberRange.new(1, 3)
+            emit.SpreadAngle = Vector2.new(180, 180)
+            emit.Size = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 0.5),
+                NumberSequenceKeypoint.new(1, 0)
+            })
+            emit.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(200, 240, 255)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(100, 180, 255))
+            })
+            emit.Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 0.3),
+                NumberSequenceKeypoint.new(1, 1)
+            })
+            emit.Parent = part
+        end
+    end
+end
+
+EffectTab:Button({
+    Title = "开启火焰特效",
+    Desc = "身体着火，不扣血",
+    Callback = function()
+        applyFire()
+        WindUI:Notify({ Title = "特效", Content = "火焰特效已开启", Duration = 3, Icon = "flame" })
+    end,
+})
+
+EffectTab:Button({
+    Title = "开启冰霜特效",
+    Desc = "身体出现冰霜粒子",
+    Callback = function()
+        applyIce()
+        WindUI:Notify({ Title = "特效", Content = "冰霜特效已开启", Duration = 3, Icon = "snowflake" })
+    end,
+})
+
+EffectTab:Button({
+    Title = "关闭特效",
+    Desc = "关闭所有角色特效",
+    Callback = function()
+        clearFire()
+        clearIce()
+        WindUI:Notify({ Title = "特效", Content = "所有特效已关闭", Duration = 3, Icon = "x" })
+    end,
+})
+
+local SkyTab = Window:Tab({ Title = "天空修改", Icon = "cloud" })
+SkyTab:Section({ Title = "天空纹理" })
+
+local skyPresets = {
+    ["漫画风格"] = {
+        Bk = "rbxassetid://271042516",
+        Dn = "rbxassetid://271042511",
+        Ft = "rbxassetid://271042606",
+        Lf = "rbxassetid://271042549",
+        Rt = "rbxassetid://271042652",
+        Up = "rbxassetid://271042579",
+    },
+    ["黑暗风格"] = {
+        Bk = "rbxassetid://159454299",
+        Dn = "rbxassetid://159454296",
+        Ft = "rbxassetid://159454293",
+        Lf = "rbxassetid://159454290",
+        Rt = "rbxassetid://159454287",
+        Up = "rbxassetid://159454284",
+    },
+}
+
+local function applySky(preset)
+    local sky = Lighting:FindFirstChildOfClass("Sky")
+    if not sky then
+        sky = Instance.new("Sky")
+        sky.Parent = Lighting
+    end
+    pcall(function()
+        sky.SkyboxBk = preset.Bk
+        sky.SkyboxDn = preset.Dn
+        sky.SkyboxFt = preset.Ft
+        sky.SkyboxLf = preset.Lf
+        sky.SkyboxRt = preset.Rt
+        sky.SkyboxUp = preset.Up
+    end)
+end
+
+SkyTab:Button({
+    Title = "漫画风格天空",
+    Desc = "明亮的漫画风格天空",
+    Callback = function()
+        applySky(skyPresets["漫画风格"])
+        WindUI:Notify({ Title = "天空", Content = "已切换到漫画风格天空", Duration = 3, Icon = "sun" })
+    end,
+})
+
+SkyTab:Button({
+    Title = "黑暗风格天空",
+    Desc = "阴暗的黑暗风格天空",
+    Callback = function()
+        applySky(skyPresets["黑暗风格"])
+        WindUI:Notify({ Title = "天空", Content = "已切换到黑暗风格天空", Duration = 3, Icon = "moon" })
+    end,
+})
+
+SkyTab:Section({ Title = "天空颜色" })
+
+local skyR, skyG, skyB = 128, 187, 219
+
+SkyTab:Slider({
+    Title = "R（红）",
+    Step = 1,
+    Value = { Min = 0, Max = 255, Default = 128 },
+    Callback = function(v) skyR = v end,
+})
+
+SkyTab:Slider({
+    Title = "G（绿）",
+    Step = 1,
+    Value = { Min = 0, Max = 255, Default = 187 },
+    Callback = function(v) skyG = v end,
+})
+
+SkyTab:Slider({
+    Title = "B（蓝）",
+    Step = 1,
+    Value = { Min = 0, Max = 255, Default = 219 },
+    Callback = function(v) skyB = v end,
+})
+
+SkyTab:Button({
+    Title = "修改天空颜色",
+    Desc = "把当前 RGB 应用到天空环境光",
+    Callback = function()
+        local color = Color3.fromRGB(skyR, skyG, skyB)
+        pcall(function()
+            Lighting.Ambient = color
+            Lighting.OutdoorAmbient = color
+            Lighting.ColorShift_Top = color
+            Lighting.ColorShift_Bottom = color
+            Lighting.Brightness = 2
+            Lighting.ClockTime = 14
+        end)
+        WindUI:Notify({ Title = "天空", Content = string.format("天空颜色已修改为 (%d, %d, %d)", skyR, skyG, skyB), Duration = 3, Icon = "palette" })
+    end,
+})
+
 local isDarkTheme = true
 local SettingsTab = Window:Tab({ Title = "设置", Icon = "settings" })
 SettingsTab:Section({ Title = "界面设置" })
@@ -695,15 +901,18 @@ SettingsTab:Button({
 SettingsTab:Section({ Title = "使用提示" })
 SettingsTab:Paragraph({
     Title = "温馨提示",
-    Desc = "1. 道具获取：点击“获取选中道具”会直接尝试把同名 Tool 克隆到你的 Backpack，同时触发游戏购买远程。\n2. 玩家选项：选择目标后可以单次传送、循环传送、调整距离、旋转玩家。\n3. 触摸甩飞采用静默甩飞原理，只变异自身，不会甩到自己。",
+    Desc = "1. 道具获取：点击“获取选中道具”会直接尝试把同名 Tool 克隆到你的 Backpack，同时触发游戏购买远程。\n2. 玩家选项：选择目标后可以单次传送、循环传送、调整距离、旋转玩家。\n3. 触摸甩飞采用静默甩飞原理，只变异自身，不会甩到自己。\n4. 特效功能：火焰 / 冰霜特效可随时开启或关闭。\n5. 天空修改：可选择漫画 / 黑暗风格，也可以自定义天空颜色。",
 })
 
--- ==================== 关于 ====================
 local AboutTab = Window:Tab({ Title = "关于", Icon = "info" })
 AboutTab:Section({ Title = "脚本信息" })
 AboutTab:Paragraph({
     Title = "PLH 脚本",
-    Desc = "版本：v0.1.6\n功能：速度 / 飞行 / 寂寞甩飞 / 道具扫描获取 / 玩家选择传送 / 静默触摸甩飞 / 穿墙",
+    Desc = "版本：v0.2\n功能：速度 / 飞行 / 寂寞甩飞 / 道具扫描获取 / 玩家选择传送 / 静默触摸甩飞 / 隐身 / 穿墙 / 角色特效 / 天空修改",
+})
+AboutTab:Paragraph({
+    Title = "关于作者",
+    Desc = "作者：Trmokih@Trmokih",
 })
 
-WindUI:Notify({ Title = "PLH 脚本", Content = "加载成功！版本 v0.1.6", Duration = 5, Icon = "check-circle" })
+WindUI:Notify({ Title = "PLH 脚本", Content = "加载成功！版本 v0.2", Duration = 5, Icon = "check-circle" })
