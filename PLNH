@@ -52,7 +52,6 @@ local function reapplyNoclip()
     end
 end
 
--- ==================== 自定义血量 ====================
 local customHealth = 100
 local originalMaxHealth = nil
 local healthLockEnabled = false
@@ -85,6 +84,38 @@ local function restoreDefaultHealth()
     return true
 end
 
+local currentJumpHeight = 7.2
+local DEFAULT_JUMP_HEIGHT = 7.2
+
+local function applyJumpHeight(value)
+    value = tonumber(value)
+    if not value then return false end
+    currentJumpHeight = value
+    local hum = getHumanoid()
+    if hum then
+        pcall(function()
+            hum.UseJumpPower = false
+            hum.JumpHeight = value
+        end)
+        return true
+    end
+    return false
+end
+
+local function restoreDefaultJumpHeight()
+    currentJumpHeight = DEFAULT_JUMP_HEIGHT
+    local hum = getHumanoid()
+    if hum then
+        pcall(function()
+            hum.UseJumpPower = true
+            hum.JumpPower = 50
+            hum.JumpHeight = DEFAULT_JUMP_HEIGHT
+        end)
+        return true
+    end
+    return false
+end
+
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(0.6)
     setSpeed(currentSpeed)
@@ -92,6 +123,7 @@ LocalPlayer.CharacterAdded:Connect(function()
     if healthLockEnabled then
         applyCustomHealth(customHealth)
     end
+    applyJumpHeight(currentJumpHeight)
 end)
 
 task.spawn(function()
@@ -106,7 +138,7 @@ end)
 local Window = WindUI:CreateWindow({
     Title = "PLH脚本",
     Icon = "rbxassetid://6031075931",
-    Author = "PLH | v0.35.6",
+    Author = "PLH | v0.45.6",
     Folder = "PLH",
     Size = UDim2.fromOffset(580, 460),
     Transparent = true,
@@ -115,7 +147,7 @@ local Window = WindUI:CreateWindow({
     SideBarWidth = 200,
     Background = "rbxassetid://13511292255",
     HasOutline = true,
-    SearchBar = true, -- WindUI 内置搜索
+    SearchBar = true,
 })
 
 local MainTab = Window:Tab({ Title = "主功能", Icon = "gamepad-2" })
@@ -149,7 +181,6 @@ MainTab:Button({
     end,
 })
 
--- ==================== 内置飞行系统 ====================
 local flying = false
 local flyHeld = { up = false, down = false, left = false, right = false, forward = false, backward = false }
 local flySpeed = 80
@@ -366,7 +397,6 @@ MainTab:Button({
     Callback = startFly,
 })
 
--- ==================== 位置管理 ====================
 local LocationTab = Window:Tab({ Title = "位置管理", Icon = "map-pin" })
 LocationTab:Section({ Title = "保存与传送" })
 
@@ -450,7 +480,6 @@ LocationTab:Button({
     end,
 })
 
--- ==================== 道具选项 ====================
 local ItemTab = Window:Tab({ Title = "道具选项", Icon = "box" })
 ItemTab:Section({ Title = "全游戏道具扫描与获取" })
 
@@ -705,7 +734,6 @@ ItemTab:Button({
     end,
 })
 
--- ==================== 玩家选项 ====================
 local PlayerTab = Window:Tab({ Title = "玩家选项", Icon = "users" })
 PlayerTab:Section({ Title = "选择目标玩家" })
 
@@ -873,7 +901,6 @@ Players.PlayerRemoving:Connect(function(player)
     pcall(function() playerDropdown:Refresh(getPlayerNames()) end)
 end)
 
--- ==================== 通用功能 ====================
 local UtilityTab = Window:Tab({ Title = "通用功能", Icon = "sliders-horizontal" })
 UtilityTab:Section({ Title = "控制开关" })
 
@@ -1023,7 +1050,6 @@ UtilityTab:Toggle({
     end,
 })
 
--- ==================== 无限跳 ====================
 local infiniteJumpEnabled = false
 local infiniteJumpConn = nil
 
@@ -1052,7 +1078,41 @@ UtilityTab:Toggle({
     end,
 })
 
--- ==================== 自定义血量设置 ====================
+UtilityTab:Section({ Title = "跳跃高度" })
+
+local jumpHeightSlider = UtilityTab:Slider({
+    Title = "跳跃高度",
+    Desc = "拖动滑条设置跳跃最高高度（默认 7.2）",
+    Step = 0.1,
+    Value = { Min = 0, Max = 500, Default = DEFAULT_JUMP_HEIGHT },
+    Callback = function(v) currentJumpHeight = v end,
+})
+
+UtilityTab:Button({
+    Title = "应用跳跃高度",
+    Desc = "把角色跳跃高度设置为滑条当前值",
+    Callback = function()
+        if applyJumpHeight(currentJumpHeight) then
+            WindUI:Notify({ Title = "跳跃高度", Content = "已设置跳跃高度为 " .. currentJumpHeight, Duration = 3, Icon = "arrow-up-circle" })
+        else
+            WindUI:Notify({ Title = "跳跃高度", Content = "角色未加载", Duration = 3, Icon = "alert-circle" })
+        end
+    end,
+})
+
+UtilityTab:Button({
+    Title = "恢复默认跳跃高度",
+    Desc = "恢复成角色原本的跳跃高度",
+    Callback = function()
+        if restoreDefaultJumpHeight() then
+            pcall(function() jumpHeightSlider:Set(DEFAULT_JUMP_HEIGHT) end)
+            WindUI:Notify({ Title = "跳跃高度", Content = "已恢复默认跳跃高度", Duration = 3, Icon = "rotate-ccw" })
+        else
+            WindUI:Notify({ Title = "跳跃高度", Content = "角色未加载", Duration = 3, Icon = "alert-circle" })
+        end
+    end,
+})
+
 UtilityTab:Section({ Title = "自定义血量" })
 
 local healthSlider = UtilityTab:Slider({
@@ -1113,7 +1173,227 @@ UtilityTab:Toggle({
     end,
 })
 
--- ==================== 特效功能 ====================
+local ScriptsTab = Window:Tab({ Title = "别的脚本", Icon = "file-code" })
+ScriptsTab:Section({ Title = "第三方脚本加载" })
+
+ScriptsTab:Paragraph({
+    Title = "温馨提示",
+    Desc = "以下脚本均为第三方脚本，点击对应按钮即可加载。加载前请确认当前游戏环境适合，以免发生异常。",
+})
+
+ScriptsTab:Button({
+    Title = "加载黑白脚本",
+    Desc = "点击下载并加载黑白脚本加载器",
+    Callback = function()
+        pcall(function()
+            loadstring(game:HttpGet('https://raw.githubusercontent.com/tfcygvunbind/Apple/main/黑白脚本加载器'))()
+        end)
+        WindUI:Notify({ Title = "别的脚本", Content = "黑白脚本已加载", Duration = 4, Icon = "download" })
+    end,
+})
+
+ScriptsTab:Button({
+    Title = "加载皮脚本",
+    Desc = "点击加载停皮脚本（QQ群 1002100032）",
+    Callback = function()
+        pcall(function()
+            getgenv().XiaoPi = "皮脚本QQ群1002100032"
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/xiaopi77/xiaopi77/main/QQ1002100032-Roblox-Pi-script.lua"))()
+        end)
+        WindUI:Notify({ Title = "别的脚本", Content = "皮脚本已加载", Duration = 4, Icon = "download" })
+    end,
+})
+
+ScriptsTab:Button({
+    Title = "加载rb脚本中心",
+    Desc = "点击加载 rb 脚本中心",
+    Callback = function()
+        pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/chesslovers69/Super-ring-parts-v6/refs/heads/main/Bylukaslol"))()
+        end)
+        WindUI:Notify({ Title = "别的脚本", Content = "rb脚本中心已加载", Duration = 4, Icon = "download" })
+    end,
+})
+
+local PerformanceTab = Window:Tab({ Title = "性能设置", Icon = "activity" })
+PerformanceTab:Section({ Title = "帧率上限设置" })
+
+PerformanceTab:Paragraph({
+    Title = "使用方法",
+    Desc = "1. 拖动滑条或输入数字设置帧率（范围 1 - 9999）。\n2. 滑条拉到 60 及以下会自动锁定，无需点击确认。\n3. 60 以上或输入框输入后，需点击“确认应用帧率上限”。\n4. 锁帧会持续轮询生效，防止被游戏重置。\n5. 点击“解除帧率锁定”即可恢复正常。",
+})
+
+local fpsCapValue = 60
+local fpsCapApplied = 60
+local fpsLockEnabled = false
+local fpsLockThread = nil
+local fpsLockTarget = nil
+local syncingFps = false
+local fpsSlider, fpsInput
+
+local function normalizeFps(n)
+    n = tonumber(n)
+    if not n then return nil end
+    n = math.floor(n + 0.5)
+    if n < 1 then n = 1 end
+    if n > 9999 then n = 9999 end
+    return n
+end
+
+local function doSetFps(n)
+    n = normalizeFps(n)
+    if not n then return false end
+    local applied = false
+    pcall(function()
+        if type(setfpscap) == "function" then
+            setfpscap(n)
+            applied = true
+        end
+    end)
+    if not applied then
+        pcall(function()
+            local env = getgenv and getgenv() or _G
+            if env and type(env.setfpscap) == "function" then
+                env.setfpscap(n)
+                applied = true
+            end
+        end)
+    end
+    if not applied then
+        pcall(function()
+            local settings = UserSettings():GetService("UserGameSettings")
+            if settings and settings.SetFpsCap then
+                settings:SetFpsCap(n)
+                applied = true
+            end
+        end)
+    end
+    if applied then
+        fpsCapApplied = n
+    end
+    return applied
+end
+
+local function getCurrentFpsCap()
+    local n = nil
+    pcall(function()
+        if type(getfpscap) == "function" then
+            n = getfpscap()
+        end
+    end)
+    return n
+end
+
+local function stopFpsLock()
+    fpsLockEnabled = false
+    fpsLockTarget = nil
+    if fpsLockThread then
+        pcall(function() task.cancel(fpsLockThread) end)
+        fpsLockThread = nil
+    end
+end
+
+local function startFpsLock(n)
+    n = normalizeFps(n)
+    if not n then return false end
+    stopFpsLock()
+    fpsCapValue = n
+    local okApplied = doSetFps(n)
+    fpsLockEnabled = true
+    fpsLockTarget = n
+    fpsLockThread = task.spawn(function()
+        while fpsLockEnabled and fpsLockTarget == n do
+            doSetFps(n)
+            task.wait(0.3)
+        end
+    end)
+    return okApplied
+end
+
+local function syncFpsUI(n)
+    syncingFps = true
+    pcall(function() if fpsSlider then fpsSlider:Set(n) end end)
+    pcall(function() if fpsInput and fpsInput.Set then fpsInput:Set(tostring(n)) end end)
+    syncingFps = false
+end
+
+fpsSlider = PerformanceTab:Slider({
+    Title = "帧率上限（滑动）",
+    Desc = "滑动设置，60 及以下会自动锁定，60 以上需点确认",
+    Step = 1,
+    Value = { Min = 1, Max = 9999, Default = 60 },
+    Callback = function(v)
+        if syncingFps then return end
+        v = normalizeFps(v)
+        if not v then return end
+        fpsCapValue = v
+        if v <= 60 then
+            local okApplied = startFpsLock(v)
+            pcall(function() if fpsInput and fpsInput.Set then fpsInput:Set(tostring(v)) end end)
+            if okApplied then
+                WindUI:Notify({ Title = "帧率", Content = "已自动锁定 " .. v .. " FPS", Duration = 2, Icon = "activity" })
+            else
+                WindUI:Notify({ Title = "帧率", Content = "执行器不支持 setfpscap，无法锁定", Duration = 3, Icon = "alert-circle" })
+            end
+        end
+    end,
+})
+
+fpsInput = PerformanceTab:Input({
+    Title = "帧率上限（输入）",
+    Desc = "输入 1 - 9999 后点击确认按钮",
+    Value = "60",
+    Placeholder = "输入 1 - 9999",
+    Callback = function(text)
+        if syncingFps then return end
+        local n = normalizeFps(text)
+        if not n then return end
+        fpsCapValue = n
+    end,
+})
+
+PerformanceTab:Button({
+    Title = "确认应用帧率上限",
+    Desc = "把当前值锁定为目标帧率",
+    Callback = function()
+        local n = normalizeFps(fpsCapValue)
+        if not n then
+            WindUI:Notify({ Title = "帧率", Content = "请输入有效数字", Duration = 2, Icon = "alert-circle" })
+            return
+        end
+        syncFpsUI(n)
+        local okApplied = startFpsLock(n)
+        if okApplied then
+            WindUI:Notify({ Title = "帧率", Content = "已锁定 " .. n .. " FPS", Duration = 3, Icon = "activity" })
+        else
+            WindUI:Notify({ Title = "帧率", Content = "执行器不支持 setfpscap，无法锁定", Duration = 3, Icon = "alert-circle" })
+        end
+    end,
+})
+
+PerformanceTab:Button({
+    Title = "解除帧率锁定",
+    Desc = "停止持续锁帧",
+    Callback = function()
+        stopFpsLock()
+        WindUI:Notify({ Title = "帧率", Content = "已解除帧率锁定", Duration = 2, Icon = "unlock" })
+    end,
+})
+
+PerformanceTab:Button({
+    Title = "调试信息",
+    Desc = "查看当前帧率锁定状态",
+    Callback = function()
+        local cur = getCurrentFpsCap()
+        local lockState = fpsLockEnabled and ("锁定中 -> " .. tostring(fpsLockTarget) .. " FPS") or "未锁定"
+        local content = string.format(
+            "滑条/输入值：%d FPS\n已应用值：%d FPS\n系统读取值：%s\n锁定状态：%s",
+            fpsCapValue, fpsCapApplied, cur and tostring(cur) or "不可读取", lockState
+        )
+        WindUI:Notify({ Title = "帧率调试", Content = content, Duration = 6, Icon = "info" })
+    end,
+})
+
 local EffectTab = Window:Tab({ Title = "特效功能", Icon = "sparkles" })
 EffectTab:Section({ Title = "角色特效" })
 
@@ -1214,7 +1494,6 @@ EffectTab:Button({
     end,
 })
 
--- ==================== 天空修改 ====================
 local SkyTab = Window:Tab({ Title = "天空修改", Icon = "cloud" })
 SkyTab:Section({ Title = "天空纹理" })
 
@@ -1313,7 +1592,6 @@ SkyTab:Button({
     end,
 })
 
--- ==================== NPC操控 ====================
 local NPCTab = Window:Tab({ Title = "NPC操控", Icon = "crosshair" })
 
 local selectedNPC = nil
@@ -1736,7 +2014,14 @@ NPCTab:Button({
     end,
 })
 
--- ==================== 设置 ====================
+local DefenseTab = Window:Tab({ Title = "防御功能", Icon = "shield" })
+DefenseTab:Section({ Title = "防御功能" })
+
+DefenseTab:Paragraph({
+    Title = "🚧 功能未开发",
+    Desc = "防御功能目前还处于预告阶段，尚未开发完成，敬请期待后续版本更新。\n\n计划中的防御功能可能包含：\n· 反甩飞保护\n· 反传送保护\n· 反击杀保护\n· 无敌模式\n· 碰撞体保护\n\n请关注脚本更新，感谢支持！",
+})
+
 local isDarkTheme = true
 local SettingsTab = Window:Tab({ Title = "设置", Icon = "settings" })
 SettingsTab:Section({ Title = "界面设置" })
@@ -1757,29 +2042,28 @@ SettingsTab:Button({
 SettingsTab:Section({ Title = "使用提示" })
 SettingsTab:Paragraph({
     Title = "温馨提示",
-    Desc = "1. 顶部搜索栏：WindUI 内置搜索，可快速定位功能（输入关键字即可）。\n2. 位置管理：点击“保存此位置”记录当前位置，在下拉框选择位置后点击“传送到保存位置”即可传送。\n3. 内置飞行：点击“开启飞行（自带）”后会出现屏幕方向按钮，点 ✕ 关闭飞行。\n4. 自定义血量：拖动滑条设置血量值，点“应用血量”生效，点“恢复默认血量”复原。\n5. 无限跳：开启后可空中连续跳跃，关闭后恢复默认跳跃。\n6. 血量锁定：开启后血量持续锁定为滑条设定值。\n7. 道具获取：点击“获取选中道具”会直接尝试把同名 Tool 克隆到你的 Backpack，同时触发游戏购买远程。\n8. 玩家选项：选择目标后可以单次传送、循环传送、调整距离、旋转玩家。\n9. 触摸甩飞采用静默甩飞原理，只变异自身，不会甩到自己。\n10. NPC操控：先点击“选择最近的NPC”，再使用击杀/删除/速度/拖拽/绊倒/操控/旋转/位置/动画等操作。\n11. 特效功能：火焰 / 冰霜特效可随时开启或关闭。\n12. 天空修改：可选择漫画 / 黑暗风格，也可以自定义天空颜色。",
+    Desc = "1. 顶部搜索栏：WindUI 内置搜索，可快速定位功能。\n2. 位置管理：保存当前位置并在需要时传送回去。\n3. 内置飞行：点击“开启飞行（自带）”后出现屏幕方向按钮，点 ✕ 关闭飞行。\n4. 自定义血量：滑动设置血量，点“应用血量”生效，点“恢复默认血量”复原。\n5. 无限跳：开启后可空中连续跳跃，关闭恢复默认。\n6. 跳跃高度：可调整角色跳跃最高高度，点“应用跳跃高度”生效。\n7. 帧率设置：滑条拉到 60 及以下会自动锁定；60 以上或输入框输入后需点“确认应用帧率上限”；锁帧会持续生效，点击“解除帧率锁定”可恢复。\n8. 血量锁定：开启后血量持续锁定为滑条设定值。\n9. 别的脚本：可加载黑白脚本、皮脚本、rb脚本中心。\n10. 防御功能目前仅为预告，尚未开发。",
 })
 
--- ==================== 关于 ====================
 local AboutTab = Window:Tab({ Title = "关于", Icon = "info" })
 AboutTab:Section({ Title = "脚本信息" })
 AboutTab:Paragraph({
     Title = "PLH 脚本",
-    Desc = "版本：v0.35.6\n功能：速度 / 自带飞行 / 寂寞甩飞 / 位置管理 / 道具扫描获取 / 玩家选择传送 / 静默触摸甩飞 / 隐身 / 穿墙 / 无限跳 / 自定义血量 / 血量锁定 / 角色特效 / 天空修改 / NPC操控 / WindUI 内置搜索",
+    Desc = "版本：v0.45.6\n功能：速度 / 自带飞行 / 寂寞甩飞 / 位置管理 / 道具扫描获取 / 玩家选择传送 / 静默触摸甩飞 / 隐身 / 穿墙 / 无限跳 / 跳跃高度 / 自定义血量 / 血量锁定 / 帧率上限 / 别的脚本加载 / 角色特效 / 天空修改 / NPC操控 / 防御功能预告 / WindUI 内置搜索",
 })
-AboutTab:Section({ Title = "v0.35.6 更新内容" })
+AboutTab:Section({ Title = "v0.45.6 更新内容" })
 AboutTab:Paragraph({
     Title = "本次更新",
-    Desc = "1. 新增自定义血量滑条（应用 / 恢复默认）\n2. 新增内置飞行系统（屏幕方向按钮，可点 ✕ 关闭）\n3. 启用 WindUI 内置搜索栏\n4. 血量锁定改为使用自定义血量滑条值\n5. 新增位置管理：保存此位置 / 已保存位置下拉选择（带选中提示）/ 传送到保存位置\n6. 新增无限跳开关（关闭后恢复默认跳跃）\n7. 版本号保持 v0.35.6",
+    Desc = "1. 帧率锁定修复：60 及以下滑条自动锁定\n2. 锁帧改为持续轮询，防止被游戏重置\n3. 输入框与滑条值自动同步\n4. 新增“解除帧率锁定”按钮\n5. 多层 setfpscap 兼容，支持更多执行器\n6. 新增跳跃高度设置\n7. 新增“别的脚本”标签页\n8. 新增“防御功能”标签页（预告）\n9. 移除全部代码注释",
 })
 AboutTab:Section({ Title = "NPC操控功能简介" })
 AboutTab:Paragraph({
     Title = "NPC操控",
-    Desc = "选择最近的NPC作为目标后，可以执行以下操作：\n1. 击杀：直接让目标死亡。\n2. 删除：把目标传送到地图销毁高度以下。\n3. Velocity：给目标施加速度，支持相对/绝对模式。\n4. Drag：把目标持续拖拽到镜头前方悬浮。\n5. Trip：让目标进入 PlatformStand 状态，暂时无法行动。\n6. Control：接管目标，把方向键输入转为对目标移动控制。\n7. Spin：让目标高速绕Y轴旋转。\n8. CFrame：把目标传送到指定坐标，支持相对/绝对模式。\n9. Lil Dance：让目标原地摇摆跳舞。\n10. 特殊动作：让目标跟随你身前做特殊动画。\n11. 停止：随时中断当前所有NPC操控循环。\n另外脚本会自动开启无限 SimulationRadius，让远程NPC可见可操控。",
+    Desc = "选择最近的NPC作为目标后，可以执行击杀、删除、Velocity、Drag、Trip、Control、Spin、CFrame、Lil Dance、特殊动作等操作，随时可点击“停止”中断。",
 })
 AboutTab:Paragraph({
     Title = "关于作者",
     Desc = "作者：Trmokih@Trmokih",
 })
 
-WindUI:Notify({ Title = "PLH 脚本", Content = "加载成功！版本 v0.35.6", Duration = 5, Icon = "check-circle" })
+WindUI:Notify({ Title = "PLH 脚本", Content = "加载成功！版本 v0.45.6", Duration = 5, Icon = "check-circle" })
