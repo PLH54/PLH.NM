@@ -16,6 +16,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local PhysicsService = game:GetService("PhysicsService")
 local Lighting = game:GetService("Lighting")
+local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
 pcall(function()
@@ -51,10 +52,46 @@ local function reapplyNoclip()
     end
 end
 
+-- ==================== 自定义血量 ====================
+local customHealth = 100
+local originalMaxHealth = nil
+local healthLockEnabled = false
+local healthLockConn = nil
+
+local function applyCustomHealth(value)
+    local hum = getHumanoid()
+    if not hum then return false end
+    if originalMaxHealth == nil then
+        originalMaxHealth = hum.MaxHealth
+    end
+    pcall(function()
+        if value > originalMaxHealth then
+            hum.MaxHealth = value
+        else
+            hum.MaxHealth = originalMaxHealth
+        end
+        hum.Health = value
+    end)
+    return true
+end
+
+local function restoreDefaultHealth()
+    local hum = getHumanoid()
+    if not hum then return false end
+    pcall(function()
+        hum.MaxHealth = originalMaxHealth or 100
+        hum.Health = hum.MaxHealth
+    end)
+    return true
+end
+
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(0.6)
     setSpeed(currentSpeed)
     reapplyNoclip()
+    if healthLockEnabled then
+        applyCustomHealth(customHealth)
+    end
 end)
 
 task.spawn(function()
@@ -69,7 +106,7 @@ end)
 local Window = WindUI:CreateWindow({
     Title = "PLH脚本",
     Icon = "rbxassetid://6031075931",
-    Author = "PLH | v0.28.9",
+    Author = "PLH | v0.35.6",
     Folder = "PLH",
     Size = UDim2.fromOffset(580, 460),
     Transparent = true,
@@ -78,6 +115,7 @@ local Window = WindUI:CreateWindow({
     SideBarWidth = 200,
     Background = "rbxassetid://13511292255",
     HasOutline = true,
+    SearchBar = true, -- WindUI 内置搜索
 })
 
 local MainTab = Window:Tab({ Title = "主功能", Icon = "gamepad-2" })
@@ -102,17 +140,6 @@ MainTab:Button({
 MainTab:Section({ Title = "额外功能" })
 
 MainTab:Button({
-    Title = "加载飞行脚本",
-    Desc = "点击加载单飞行脚本（按 F 键开启/关闭）",
-    Callback = function()
-        pcall(function()
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/Entitynt/Roblox-Fly-Script/refs/heads/main/FlyCommand.lua", true))()
-        end)
-        WindUI:Notify({ Title = "PLH脚本", Content = "飞行脚本已加载", Duration = 4, Icon = "plane" })
-    end,
-})
-
-MainTab:Button({
     Title = "加载寂寞甩飞",
     Callback = function()
         pcall(function()
@@ -122,6 +149,308 @@ MainTab:Button({
     end,
 })
 
+-- ==================== 内置飞行系统 ====================
+local flying = false
+local flyHeld = { up = false, down = false, left = false, right = false, forward = false, backward = false }
+local flySpeed = 80
+local flyConn = nil
+local flyGui = nil
+local savedFlyWalkSpeed = nil
+
+local function destroyFlyUI()
+    if flyGui then
+        pcall(function() flyGui:Destroy() end)
+        flyGui = nil
+    end
+end
+
+local function stopFly()
+    if not flying and not flyGui then return end
+    flying = false
+
+    if flyConn then
+        flyConn:Disconnect()
+        flyConn = nil
+    end
+
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        local bv = hrp:FindFirstChild("PLH_FlyVelocity")
+        if bv then bv:Destroy() end
+        local bg = hrp:FindFirstChild("PLH_FlyGyro")
+        if bg then bg:Destroy() end
+    end
+
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum.WalkSpeed = savedFlyWalkSpeed or currentSpeed
+    end
+    savedFlyWalkSpeed = nil
+
+    for k in pairs(flyHeld) do flyHeld[k] = false end
+
+    destroyFlyUI()
+
+    WindUI:Notify({ Title = "飞行", Content = "飞行已关闭", Duration = 2, Icon = "plane" })
+end
+
+local function buildFlyUI()
+    if flyGui then return end
+    local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "PLH_FlyUI"
+    sg.ResetOnSpawn = false
+    sg.IgnoreGuiInset = true
+    sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    sg.Parent = playerGui
+
+    local main = Instance.new("Frame")
+    main.Size = UDim2.fromOffset(240, 340)
+    main.Position = UDim2.new(0.5, -120, 0.5, -170)
+    main.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    main.BackgroundTransparency = 0.15
+    main.BorderSizePixel = 0
+    main.Active = true
+    main.Draggable = true
+    main.Parent = sg
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = main
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(100, 140, 255)
+    stroke.Thickness = 2
+    stroke.Transparency = 0.3
+    stroke.Parent = main
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -60, 0, 30)
+    title.Position = UDim2.fromOffset(15, 8)
+    title.BackgroundTransparency = 1
+    title.Text = "✈ PLH 飞行  |  速度:" .. flySpeed
+    title.TextColor3 = Color3.fromRGB(150, 180, 255)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 15
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = main
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.fromOffset(30, 30)
+    closeBtn.Position = UDim2.new(1, -40, 0, 8)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(220, 60, 60)
+    closeBtn.Text = "✕"
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 18
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Parent = main
+    local cc = Instance.new("UICorner")
+    cc.CornerRadius = UDim.new(0, 8)
+    cc.Parent = closeBtn
+    closeBtn.MouseButton1Click:Connect(stopFly)
+
+    local function makeBtn(text, pos, dirKey)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.fromOffset(60, 60)
+        btn.Position = pos
+        btn.BackgroundColor3 = Color3.fromRGB(45, 50, 75)
+        btn.Text = text
+        btn.TextColor3 = Color3.fromRGB(220, 230, 255)
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 22
+        btn.BorderSizePixel = 0
+        btn.Parent = main
+
+        local c = Instance.new("UICorner")
+        c.CornerRadius = UDim.new(0, 10)
+        c.Parent = btn
+
+        local s = Instance.new("UIStroke")
+        s.Color = Color3.fromRGB(100, 140, 255)
+        s.Thickness = 1.5
+        s.Transparency = 0.5
+        s.Parent = btn
+
+        local function press()
+            flyHeld[dirKey] = true
+            btn.BackgroundColor3 = Color3.fromRGB(80, 110, 200)
+        end
+        local function release()
+            flyHeld[dirKey] = false
+            btn.BackgroundColor3 = Color3.fromRGB(45, 50, 75)
+        end
+
+        btn.MouseButton1Down:Connect(press)
+        btn.MouseButton1Up:Connect(release)
+        btn.MouseLeave:Connect(release)
+        btn.TouchTap:Connect(function()
+            press()
+            task.delay(0.15, release)
+        end)
+    end
+
+    makeBtn("↑", UDim2.fromOffset(90, 50), "up")
+    makeBtn("←", UDim2.fromOffset(15, 120), "left")
+    makeBtn("→", UDim2.fromOffset(165, 120), "right")
+    makeBtn("↓", UDim2.fromOffset(90, 190), "down")
+    makeBtn("前", UDim2.fromOffset(15, 260), "forward")
+    makeBtn("后", UDim2.fromOffset(165, 260), "backward")
+
+    flyGui = sg
+end
+
+local function startFly()
+    if flying then
+        WindUI:Notify({ Title = "飞行", Content = "飞行已经在运行", Duration = 2, Icon = "info" })
+        return
+    end
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then
+        WindUI:Notify({ Title = "飞行", Content = "角色尚未加载", Duration = 3, Icon = "alert-circle" })
+        return
+    end
+
+    flying = true
+    savedFlyWalkSpeed = hum.WalkSpeed
+    hum.WalkSpeed = 0
+
+    local bv = Instance.new("BodyVelocity")
+    bv.Name = "PLH_FlyVelocity"
+    bv.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+    bv.Velocity = Vector3.zero
+    bv.Parent = hrp
+
+    local bg = Instance.new("BodyGyro")
+    bg.Name = "PLH_FlyGyro"
+    bg.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
+    bg.P = 10000
+    bg.D = 500
+    bg.CFrame = hrp.CFrame
+    bg.Parent = hrp
+
+    buildFlyUI()
+
+    flyConn = RunService.Heartbeat:Connect(function()
+        if not flying then return end
+        local c = LocalPlayer.Character
+        local h = c and c:FindFirstChild("HumanoidRootPart")
+        if not h then return end
+        local v = h:FindFirstChild("PLH_FlyVelocity")
+        local g = h:FindFirstChild("PLH_FlyGyro")
+        if not v or not g then return end
+
+        local cam = workspace.CurrentCamera
+        local dir = Vector3.zero
+        if flyHeld.up then dir = dir + Vector3.new(0, 1, 0) end
+        if flyHeld.down then dir = dir + Vector3.new(0, -1, 0) end
+        if flyHeld.left then dir = dir - cam.CFrame.RightVector end
+        if flyHeld.right then dir = dir + cam.CFrame.RightVector end
+        if flyHeld.forward then dir = dir + cam.CFrame.LookVector end
+        if flyHeld.backward then dir = dir - cam.CFrame.LookVector end
+
+        v.Velocity = (dir.Magnitude > 0) and (dir.Unit * flySpeed) or Vector3.zero
+        g.CFrame = cam.CFrame
+    end)
+
+    WindUI:Notify({ Title = "飞行", Content = "飞行已开启！使用屏幕按钮控制方向", Duration = 3, Icon = "plane" })
+end
+
+MainTab:Button({
+    Title = "开启飞行（自带）",
+    Desc = "点击开启内置飞行，屏幕会出现上下左右/前后按钮，点 ✕ 关闭飞行",
+    Callback = startFly,
+})
+
+-- ==================== 位置管理 ====================
+local LocationTab = Window:Tab({ Title = "位置管理", Icon = "map-pin" })
+LocationTab:Section({ Title = "保存与传送" })
+
+LocationTab:Paragraph({
+    Title = "使用方法",
+    Desc = "1. 站在想去的位置，点击“保存此位置”，该位置会记录到下方列表。\n2. 在“已保存位置”下拉框中选择一个位置，会弹出选中提示。\n3. 点击“传送到保存位置”，角色会瞬间移动到该位置。",
+})
+
+local savedPositions = {}
+local savedPositionCounter = 0
+local selectedPositionName = nil
+
+local locationDropdown = LocationTab:Dropdown({
+    Title = "已保存位置",
+    Desc = "点击“保存此位置”后，位置会出现在这里",
+    Values = {},
+    Value = nil,
+    Callback = function(name)
+        selectedPositionName = name
+        if name then
+            WindUI:Notify({ Title = "位置管理", Content = "已选中：" .. name, Duration = 3, Icon = "map-pin" })
+        end
+    end,
+})
+
+local function getSavedPositionNames()
+    local names = {}
+    for _, entry in ipairs(savedPositions) do
+        table.insert(names, entry.name)
+    end
+    return names
+end
+
+LocationTab:Button({
+    Title = "保存此位置",
+    Desc = "把当前位置记录到已保存位置列表",
+    Callback = function()
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then
+            WindUI:Notify({ Title = "位置管理", Content = "角色尚未加载", Duration = 3, Icon = "alert-circle" })
+            return
+        end
+        savedPositionCounter += 1
+        local pos = hrp.Position
+        local name = string.format("位置%d (%.0f, %.0f, %.0f)", savedPositionCounter, pos.X, pos.Y, pos.Z)
+        table.insert(savedPositions, { name = name, cframe = hrp.CFrame })
+        pcall(function() locationDropdown:Refresh(getSavedPositionNames()) end)
+        WindUI:Notify({ Title = "位置管理", Content = "已保存：" .. name, Duration = 3, Icon = "check-circle" })
+    end,
+})
+
+LocationTab:Button({
+    Title = "传送到保存位置",
+    Desc = "传送到下拉框中选中的位置",
+    Callback = function()
+        local name = selectedPositionName or (locationDropdown and locationDropdown.Value)
+        if not name then
+            WindUI:Notify({ Title = "位置管理", Content = "请先在下拉框选择一个已保存位置", Duration = 3, Icon = "alert-circle" })
+            return
+        end
+        local target = nil
+        for _, entry in ipairs(savedPositions) do
+            if entry.name == name then
+                target = entry
+                break
+            end
+        end
+        if not target then
+            WindUI:Notify({ Title = "位置管理", Content = "未找到该位置", Duration = 3, Icon = "alert-circle" })
+            return
+        end
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then
+            WindUI:Notify({ Title = "位置管理", Content = "角色尚未加载", Duration = 3, Icon = "alert-circle" })
+            return
+        end
+        pcall(function() hrp.CFrame = target.cframe end)
+        WindUI:Notify({ Title = "位置管理", Content = "已传送到：" .. name, Duration = 3, Icon = "arrow-right" })
+    end,
+})
+
+-- ==================== 道具选项 ====================
 local ItemTab = Window:Tab({ Title = "道具选项", Icon = "box" })
 ItemTab:Section({ Title = "全游戏道具扫描与获取" })
 
@@ -376,6 +705,7 @@ ItemTab:Button({
     end,
 })
 
+-- ==================== 玩家选项 ====================
 local PlayerTab = Window:Tab({ Title = "玩家选项", Icon = "users" })
 PlayerTab:Section({ Title = "选择目标玩家" })
 
@@ -543,6 +873,7 @@ Players.PlayerRemoving:Connect(function(player)
     pcall(function() playerDropdown:Refresh(getPlayerNames()) end)
 end)
 
+-- ==================== 通用功能 ====================
 local UtilityTab = Window:Tab({ Title = "通用功能", Icon = "sliders-horizontal" })
 UtilityTab:Section({ Title = "控制开关" })
 
@@ -692,11 +1023,75 @@ UtilityTab:Toggle({
     end,
 })
 
-local healthLockEnabled = false
-local healthLockConn = nil
+-- ==================== 无限跳 ====================
+local infiniteJumpEnabled = false
+local infiniteJumpConn = nil
+
 UtilityTab:Toggle({
-    Title = "血量锁定（100%）",
-    Desc = "开启后自身血量一直锁定在满血 100%",
+    Title = "无限跳",
+    Desc = "开启后可在空中无限跳跃；关闭后恢复默认跳跃",
+    Value = false,
+    Callback = function(state)
+        infiniteJumpEnabled = state
+        if infiniteJumpConn then
+            infiniteJumpConn:Disconnect()
+            infiniteJumpConn = nil
+        end
+        if not state then
+            WindUI:Notify({ Title = "无限跳", Content = "无限跳已关闭，已恢复默认跳跃", Duration = 3, Icon = "arrow-up" })
+            return
+        end
+        infiniteJumpConn = UserInputService.JumpRequest:Connect(function()
+            if not infiniteJumpEnabled then return end
+            local hum = getHumanoid()
+            if hum then
+                pcall(function() hum:ChangeState(Enum.HumanoidStateType.Jumping) end)
+            end
+        end)
+        WindUI:Notify({ Title = "无限跳", Content = "无限跳已开启", Duration = 3, Icon = "arrow-up" })
+    end,
+})
+
+-- ==================== 自定义血量设置 ====================
+UtilityTab:Section({ Title = "自定义血量" })
+
+local healthSlider = UtilityTab:Slider({
+    Title = "自定义血量",
+    Desc = "拖动滑条设置目标血量值（1 - 10000）",
+    Step = 1,
+    Value = { Min = 1, Max = 10000, Default = 100 },
+    Callback = function(v) customHealth = v end,
+})
+
+UtilityTab:Button({
+    Title = "应用血量",
+    Desc = "将角色血量设置为滑条当前值",
+    Callback = function()
+        if applyCustomHealth(customHealth) then
+            WindUI:Notify({ Title = "血量", Content = "已设置血量为 " .. customHealth, Duration = 3, Icon = "heart" })
+        else
+            WindUI:Notify({ Title = "血量", Content = "角色未加载", Duration = 3, Icon = "alert-circle" })
+        end
+    end,
+})
+
+UtilityTab:Button({
+    Title = "恢复默认血量",
+    Desc = "恢复成角色原本的最大血量",
+    Callback = function()
+        if restoreDefaultHealth() then
+            customHealth = originalMaxHealth or 100
+            pcall(function() healthSlider:Set(customHealth) end)
+            WindUI:Notify({ Title = "血量", Content = "已恢复默认血量", Duration = 3, Icon = "rotate-ccw" })
+        else
+            WindUI:Notify({ Title = "血量", Content = "角色未加载", Duration = 3, Icon = "alert-circle" })
+        end
+    end,
+})
+
+UtilityTab:Toggle({
+    Title = "血量锁定",
+    Desc = "开启后血量持续锁定为滑条设定值",
     Value = false,
     Callback = function(state)
         healthLockEnabled = state
@@ -706,13 +1101,19 @@ UtilityTab:Toggle({
             if not healthLockEnabled then return end
             local char = LocalPlayer.Character
             local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if hum and hum.Health < hum.MaxHealth then
-                pcall(function() hum.Health = hum.MaxHealth end)
+            if hum then
+                if customHealth > (originalMaxHealth or hum.MaxHealth) then
+                    hum.MaxHealth = customHealth
+                end
+                if hum.Health < customHealth then
+                    pcall(function() hum.Health = customHealth end)
+                end
             end
         end)
     end,
 })
 
+-- ==================== 特效功能 ====================
 local EffectTab = Window:Tab({ Title = "特效功能", Icon = "sparkles" })
 EffectTab:Section({ Title = "角色特效" })
 
@@ -813,6 +1214,7 @@ EffectTab:Button({
     end,
 })
 
+-- ==================== 天空修改 ====================
 local SkyTab = Window:Tab({ Title = "天空修改", Icon = "cloud" })
 SkyTab:Section({ Title = "天空纹理" })
 
@@ -911,6 +1313,7 @@ SkyTab:Button({
     end,
 })
 
+-- ==================== NPC操控 ====================
 local NPCTab = Window:Tab({ Title = "NPC操控", Icon = "crosshair" })
 
 local selectedNPC = nil
@@ -1333,6 +1736,7 @@ NPCTab:Button({
     end,
 })
 
+-- ==================== 设置 ====================
 local isDarkTheme = true
 local SettingsTab = Window:Tab({ Title = "设置", Icon = "settings" })
 SettingsTab:Section({ Title = "界面设置" })
@@ -1353,14 +1757,20 @@ SettingsTab:Button({
 SettingsTab:Section({ Title = "使用提示" })
 SettingsTab:Paragraph({
     Title = "温馨提示",
-    Desc = "1. 道具获取：点击“获取选中道具”会直接尝试把同名 Tool 克隆到你的 Backpack，同时触发游戏购买远程。\n2. 玩家选项：选择目标后可以单次传送、循环传送、调整距离、旋转玩家。\n3. 触摸甩飞采用静默甩飞原理，只变异自身，不会甩到自己。\n4. 血量锁定：开启后自身血量持续锁定满血，重生后自动保持。\n5. NPC操控：先点击“选择最近的NPC”，再使用击杀/删除/速度/拖拽/绊倒/操控/旋转/位置/动画等操作。\n6. 特效功能：火焰 / 冰霜特效可随时开启或关闭。\n7. 天空修改：可选择漫画 / 黑暗风格，也可以自定义天空颜色。",
+    Desc = "1. 顶部搜索栏：WindUI 内置搜索，可快速定位功能（输入关键字即可）。\n2. 位置管理：点击“保存此位置”记录当前位置，在下拉框选择位置后点击“传送到保存位置”即可传送。\n3. 内置飞行：点击“开启飞行（自带）”后会出现屏幕方向按钮，点 ✕ 关闭飞行。\n4. 自定义血量：拖动滑条设置血量值，点“应用血量”生效，点“恢复默认血量”复原。\n5. 无限跳：开启后可空中连续跳跃，关闭后恢复默认跳跃。\n6. 血量锁定：开启后血量持续锁定为滑条设定值。\n7. 道具获取：点击“获取选中道具”会直接尝试把同名 Tool 克隆到你的 Backpack，同时触发游戏购买远程。\n8. 玩家选项：选择目标后可以单次传送、循环传送、调整距离、旋转玩家。\n9. 触摸甩飞采用静默甩飞原理，只变异自身，不会甩到自己。\n10. NPC操控：先点击“选择最近的NPC”，再使用击杀/删除/速度/拖拽/绊倒/操控/旋转/位置/动画等操作。\n11. 特效功能：火焰 / 冰霜特效可随时开启或关闭。\n12. 天空修改：可选择漫画 / 黑暗风格，也可以自定义天空颜色。",
 })
 
+-- ==================== 关于 ====================
 local AboutTab = Window:Tab({ Title = "关于", Icon = "info" })
 AboutTab:Section({ Title = "脚本信息" })
 AboutTab:Paragraph({
     Title = "PLH 脚本",
-    Desc = "版本：v0.28.9\n功能：速度 / 飞行 / 寂寞甩飞 / 道具扫描获取 / 玩家选择传送 / 静默触摸甩飞 / 隐身 / 穿墙 / 血量锁定 / 角色特效 / 天空修改 / NPC操控",
+    Desc = "版本：v0.35.6\n功能：速度 / 自带飞行 / 寂寞甩飞 / 位置管理 / 道具扫描获取 / 玩家选择传送 / 静默触摸甩飞 / 隐身 / 穿墙 / 无限跳 / 自定义血量 / 血量锁定 / 角色特效 / 天空修改 / NPC操控 / WindUI 内置搜索",
+})
+AboutTab:Section({ Title = "v0.35.6 更新内容" })
+AboutTab:Paragraph({
+    Title = "本次更新",
+    Desc = "1. 新增自定义血量滑条（应用 / 恢复默认）\n2. 新增内置飞行系统（屏幕方向按钮，可点 ✕ 关闭）\n3. 启用 WindUI 内置搜索栏\n4. 血量锁定改为使用自定义血量滑条值\n5. 新增位置管理：保存此位置 / 已保存位置下拉选择（带选中提示）/ 传送到保存位置\n6. 新增无限跳开关（关闭后恢复默认跳跃）\n7. 版本号保持 v0.35.6",
 })
 AboutTab:Section({ Title = "NPC操控功能简介" })
 AboutTab:Paragraph({
@@ -1372,4 +1782,4 @@ AboutTab:Paragraph({
     Desc = "作者：Trmokih@Trmokih",
 })
 
-WindUI:Notify({ Title = "PLH 脚本", Content = "加载成功！版本 v0.28.9", Duration = 5, Icon = "check-circle" })
+WindUI:Notify({ Title = "PLH 脚本", Content = "加载成功！版本 v0.35.6", Duration = 5, Icon = "check-circle" })
