@@ -139,7 +139,7 @@ end)
 local Window = WindUI:CreateWindow({
     Title = "PLH脚本",
     Icon = "rbxassetid://6031075931",
-    Author = "PLH | v0.69.7.9",
+    Author = "PLH | v0.76.89",
     Folder = "PLH",
     Size = UDim2.fromOffset(580, 460),
     Transparent = true,
@@ -464,7 +464,6 @@ LocationTab:Button({
     end,
 })
 
--- ========== 道具选项（重写偷取逻辑） ==========
 local ItemTab = Window:Tab({ Title = "道具选项", Icon = "box" })
 ItemTab:Section({ Title = "全游戏道具扫描与获取" })
 
@@ -684,7 +683,7 @@ ItemTab:Section({ Title = "偷取其他玩家道具" })
 
 ItemTab:Paragraph({
     Title = "技术说明",
-    Desc = "客户端无法直接读取其他玩家背包中未装备的物品。此功能会扫描全服玩家身上已装备的 Tool 并直接克隆，同时会自动探测游戏里名为 Backpack/Inventory 的远程，并尝试调用“Grab/Get/Store”等常见指令来索要物品。[reference:4]成功率取决于游戏自身远程的安全校验强度。",
+    Desc = "客户端无法直接读取其他玩家背包中未装备的物品。此功能会扫描全服玩家身上已装备的 Tool 并直接克隆，同时会自动探测游戏里名为 Backpack/Inventory 的远程，并尝试调用“Grab/Get/Store”等常见指令来索要物品。成功率取决于游戏自身远程的安全校验强度。",
 })
 
 ItemTab:Button({
@@ -711,12 +710,9 @@ ItemTab:Button({
         local stolen, clonedTools = {}, {}
         local seenNames = {}
         local totalPlayers = #Players:GetPlayers() - 1
-        local checked = 0
 
-        -- 1. 克隆所有已装备 Tool
         for _, player in ipairs(Players:GetPlayers()) do
             if player == LocalPlayer then continue end
-            checked = checked + 1
             local char = player.Character
             if char then
                 for _, child in ipairs(char:GetChildren()) do
@@ -733,7 +729,6 @@ ItemTab:Button({
             end
         end
 
-        -- 2. 探测并调用 Backpack/Inventory 相关远程
         local backpackRemotes = {}
         for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
             if (obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction")) then
@@ -806,16 +801,6 @@ ItemTab:Button({
     end,
 })
 
-local PlayerTab = Window:Tab({ Title = "玩家选项", Icon = "users" })
-PlayerTab:Section({ Title = "选择目标玩家" })
-
-local selectedTargetPlayer = nil
-local teleportDistance = 5
-local loopTeleportConn = nil
-local rotateConn = nil
-local loopTeleportEnabled = false
-local rotateEnabled = false
-
 local function getPlayerNames()
     local names = {}
     for _, p in ipairs(Players:GetPlayers()) do
@@ -826,19 +811,185 @@ local function getPlayerNames()
     return names
 end
 
+local function findPlayerByName(name)
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.Name == name then
+            return p
+        end
+    end
+    return nil
+end
+
+local function getHRP(player)
+    if not player then return nil end
+    local char = player.Character
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function teleportPlayerToMyFront(targetPlayer, distance)
+    if not targetPlayer or targetPlayer == LocalPlayer then return false end
+    local myRoot = getHRP(LocalPlayer)
+    local targetRoot = getHRP(targetPlayer)
+    if not myRoot or not targetRoot then return false end
+    pcall(function() targetRoot:SetNetworkOwner(LocalPlayer) end)
+    local pos = myRoot.Position + myRoot.CFrame.LookVector * distance + Vector3.new(0, 3, 0)
+    local rot = targetRoot.CFrame - targetRoot.Position
+    pcall(function()
+        targetRoot.CFrame = CFrame.new(pos) * rot
+    end)
+    return true
+end
+
+local function teleportMeToPlayer(targetPlayer, distance)
+    if not targetPlayer or targetPlayer == LocalPlayer then return false end
+    local myRoot = getHRP(LocalPlayer)
+    local targetRoot = getHRP(targetPlayer)
+    if not myRoot or not targetRoot then return false end
+    local offset = targetRoot.CFrame.LookVector * distance + Vector3.new(0, 3, 0)
+    local rot = myRoot.CFrame - myRoot.Position
+    pcall(function()
+        myRoot.CFrame = CFrame.new(targetRoot.Position + offset) * rot
+    end)
+    return true
+end
+
+local function buildPlayerControlSection(parentTab, sectionTitle, index)
+    local selVar = "_selectedTargetPlayer_" .. index
+    local distVar = "_teleportDistance_" .. index
+    local connVar = "_loopTeleportConn_" .. index
+    local enabledVar = "_loopTeleportEnabled_" .. index
+    local selfConnVar = "_loopSelfTeleportConn_" .. index
+    local selfEnabledVar = "_loopSelfTeleportEnabled_" .. index
+    local dropdownVar = "_playerDropdown_" .. index
+
+    _G[selVar] = nil
+    _G[distVar] = 5
+    _G[enabledVar] = false
+    _G[selfEnabledVar] = false
+
+    parentTab:Section({ Title = sectionTitle })
+
+    local drop = parentTab:Dropdown({
+        Title = "选择目标玩家",
+        Desc = "选择后，下方操作会作用于此玩家",
+        Values = getPlayerNames(),
+        Value = nil,
+        Callback = function(name)
+            _G[selVar] = findPlayerByName(name)
+        end,
+    })
+    _G[dropdownVar] = drop
+
+    parentTab:Button({
+        Title = "刷新玩家列表",
+        Desc = "重新检测本服务器当前玩家",
+        Callback = function()
+            local names = getPlayerNames()
+            pcall(function() drop:Refresh(names) end)
+            WindUI:Notify({ Title = sectionTitle, Content = "已刷新玩家列表，共 " .. #names .. " 名玩家", Duration = 3, Icon = "refresh-cw" })
+        end,
+    })
+
+    parentTab:Slider({
+        Title = "传送距离",
+        Desc = "调整传送时与目标玩家的距离（格）",
+        Step = 1,
+        Value = { Min = 1, Max = 50, Default = 5 },
+        Callback = function(value)
+            _G[distVar] = value
+        end,
+    })
+
+    parentTab:Button({
+        Title = "传送过来（单次）",
+        Desc = "将选中玩家瞬间传送到你附近",
+        Callback = function()
+            local t = _G[selVar]
+            if teleportPlayerToMyFront(t, _G[distVar]) then
+                WindUI:Notify({ Title = sectionTitle, Content = "已传送 " .. t.Name, Duration = 3, Icon = "arrow-down" })
+            else
+                WindUI:Notify({ Title = sectionTitle, Content = "传送失败：请先选择玩家，或角色尚未加载", Duration = 3, Icon = "alert-circle" })
+            end
+        end,
+    })
+
+    parentTab:Toggle({
+        Title = "循环传送",
+        Desc = "开启后持续将选中玩家传送到你附近",
+        Value = false,
+        Callback = function(state)
+            _G[enabledVar] = state
+            if _G[connVar] then
+                _G[connVar]:Disconnect()
+                _G[connVar] = nil
+            end
+            if not state then return end
+            _G[connVar] = RunService.Heartbeat:Connect(function()
+                if not _G[enabledVar] then return end
+                if _G[selVar] then
+                    pcall(teleportPlayerToMyFront, _G[selVar], _G[distVar])
+                end
+            end)
+        end,
+    })
+
+    parentTab:Button({
+        Title = "传送到玩家旁边（单次）",
+        Desc = "把你自己瞬间传送到选中玩家旁边，距离由上方“传送距离”控制",
+        Callback = function()
+            local t = _G[selVar]
+            if teleportMeToPlayer(t, _G[distVar]) then
+                WindUI:Notify({ Title = sectionTitle, Content = "已传送到 " .. t.Name .. " 旁边", Duration = 3, Icon = "arrow-up" })
+            else
+                WindUI:Notify({ Title = sectionTitle, Content = "传送失败：请先选择玩家，或角色尚未加载", Duration = 3, Icon = "alert-circle" })
+            end
+        end,
+    })
+
+    parentTab:Toggle({
+        Title = "循环传送到玩家旁边",
+        Desc = "开启后持续把你自己传送到选中玩家旁边，关闭后停止",
+        Value = false,
+        Callback = function(state)
+            _G[selfEnabledVar] = state
+            if _G[selfConnVar] then
+                _G[selfConnVar]:Disconnect()
+                _G[selfConnVar] = nil
+            end
+            if not state then
+                WindUI:Notify({ Title = sectionTitle, Content = "循环自身传送已停止", Duration = 2, Icon = "square" })
+                return
+            end
+            _G[selfConnVar] = RunService.Heartbeat:Connect(function()
+                if not _G[selfEnabledVar] then return end
+                if _G[selVar] then
+                    pcall(teleportMeToPlayer, _G[selVar], _G[distVar])
+                end
+            end)
+            WindUI:Notify({ Title = sectionTitle, Content = "循环自身传送已开启", Duration = 3, Icon = "refresh-cw" })
+        end,
+    })
+
+    return drop
+end
+
+local PlayerTab = Window:Tab({ Title = "玩家选项", Icon = "users" })
+PlayerTab:Section({ Title = "选择目标玩家" })
+
+local selectedTargetPlayer = nil
+local teleportDistance = 5
+local loopTeleportConn = nil
+local rotateConn = nil
+local loopTeleportEnabled = false
+local rotateEnabled = false
+
 local playerDropdown = PlayerTab:Dropdown({
     Title = "选择目标玩家",
     Desc = "选择后，下方操作会作用于此玩家",
     Values = getPlayerNames(),
     Value = nil,
     Callback = function(name)
-        selectedTargetPlayer = nil
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p.Name == name then
-                selectedTargetPlayer = p
-                break
-            end
-        end
+        selectedTargetPlayer = findPlayerByName(name)
     end,
 })
 
@@ -863,22 +1014,7 @@ PlayerTab:Slider({
 })
 
 local function teleportTargetOnce()
-    if not selectedTargetPlayer then return false end
-    if selectedTargetPlayer == LocalPlayer then return false end
-    local myChar = LocalPlayer.Character
-    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    if not myRoot then return false end
-    local targetChar = selectedTargetPlayer.Character
-    local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
-    if not targetRoot then return false end
-    pcall(function() targetRoot:SetNetworkOwner(LocalPlayer) end)
-    local myLook = myRoot.CFrame.LookVector
-    local targetPos = myRoot.Position + myLook * teleportDistance + Vector3.new(0, 3, 0)
-    local rotationOnly = targetRoot.CFrame - targetRoot.Position
-    pcall(function()
-        targetRoot.CFrame = CFrame.new(targetPos) * rotationOnly
-    end)
-    return true
+    return teleportPlayerToMyFront(selectedTargetPlayer, teleportDistance)
 end
 
 PlayerTab:Button({
@@ -957,27 +1093,8 @@ PlayerTab:Toggle({
 
 PlayerTab:Section({ Title = "传送到目标玩家旁边" })
 
-local function getSelfHRP()
-    local char = LocalPlayer.Character
-    return char and char:FindFirstChild("HumanoidRootPart")
-end
-
-local function getTargetHRP()
-    if not selectedTargetPlayer then return nil end
-    local char = selectedTargetPlayer.Character
-    return char and char:FindFirstChild("HumanoidRootPart")
-end
-
 local function teleportSelfToTarget()
-    local myRoot = getSelfHRP()
-    local targetRoot = getTargetHRP()
-    if not myRoot or not targetRoot then return false end
-    local offset = targetRoot.CFrame.LookVector * teleportDistance + Vector3.new(0, 3, 0)
-    local rotationOnly = myRoot.CFrame - myRoot.Position
-    pcall(function()
-        myRoot.CFrame = CFrame.new(targetRoot.Position + offset) * rotationOnly
-    end)
-    return true
+    return teleportMeToPlayer(selectedTargetPlayer, teleportDistance)
 end
 
 PlayerTab:Button({
@@ -1088,12 +1205,12 @@ PlayerTab:Button({
             WindUI:Notify({ Title = "环绕玩家", Content = "请先选择目标玩家", Duration = 3, Icon = "alert-circle" })
             return
         end
-        local targetRoot = getTargetHRP()
+        local targetRoot = getHRP(selectedTargetPlayer)
         if not targetRoot then
             WindUI:Notify({ Title = "环绕玩家", Content = "目标玩家角色未加载", Duration = 3, Icon = "alert-circle" })
             return
         end
-        local myRoot = getSelfHRP()
+        local myRoot = getHRP(LocalPlayer)
         if not myRoot then
             WindUI:Notify({ Title = "环绕玩家", Content = "你的角色未加载", Duration = 3, Icon = "alert-circle" })
             return
@@ -1105,8 +1222,8 @@ PlayerTab:Button({
         pcall(teleportSelfToTarget)
         orbitConn = RunService.Heartbeat:Connect(function(dt)
             if not orbitEnabled then return end
-            local mRoot = getSelfHRP()
-            local tRoot = getTargetHRP()
+            local mRoot = getHRP(LocalPlayer)
+            local tRoot = getHRP(selectedTargetPlayer)
             if not mRoot or not tRoot then
                 stopOrbit(true)
                 WindUI:Notify({ Title = "环绕玩家", Content = "目标玩家角色丢失，环绕已自动停止", Duration = 3, Icon = "alert-circle" })
@@ -1146,9 +1263,21 @@ PlayerTab:Button({
     end,
 })
 
+local P2Tab = Window:Tab({ Title = "玩家操控2", Icon = "user-plus" })
+buildPlayerControlSection(P2Tab, "玩家选择2（独立控制）", 2)
+
+local P3Tab = Window:Tab({ Title = "玩家操控3", Icon = "user-plus" })
+buildPlayerControlSection(P3Tab, "玩家选择3（独立控制）", 3)
+
 Players.PlayerAdded:Connect(function()
     task.wait(0.3)
     pcall(function() playerDropdown:Refresh(getPlayerNames()) end)
+    for i = 2, 3 do
+        local drop = _G["_playerDropdown_" .. i]
+        if drop then
+            pcall(function() drop:Refresh(getPlayerNames()) end)
+        end
+    end
 end)
 
 Players.PlayerRemoving:Connect(function(player)
@@ -1156,11 +1285,22 @@ Players.PlayerRemoving:Connect(function(player)
         selectedTargetPlayer = nil
         stopOrbit(true)
     end
+    for i = 2, 3 do
+        local sel = _G["_selectedTargetPlayer_" .. i]
+        if sel == player then
+            _G["_selectedTargetPlayer_" .. i] = nil
+        end
+    end
     task.wait(0.3)
     pcall(function() playerDropdown:Refresh(getPlayerNames()) end)
+    for i = 2, 3 do
+        local drop = _G["_playerDropdown_" .. i]
+        if drop then
+            pcall(function() drop:Refresh(getPlayerNames()) end)
+        end
+    end
 end)
 
--- ========== 自瞄（加入 FOV 范围显示与调节） ==========
 local AimbotTab = Window:Tab({ Title = "自瞄", Icon = "crosshair" })
 AimbotTab:Section({ Title = "自瞄设置" })
 
@@ -1648,6 +1788,17 @@ ScriptsTab:Button({
             loadstring(game:HttpGet("https://raw.githubusercontent.com/chesslovers69/Super-ring-parts-v6/refs/heads/main/Bylukaslol"))()
         end)
         WindUI:Notify({ Title = "别的脚本", Content = "rb脚本中心已加载", Duration = 4, Icon = "download" })
+    end,
+})
+
+ScriptsTab:Button({
+    Title = "少脚本",
+    Desc = "点击加载羽脚本v2",
+    Callback = function()
+        pcall(function()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/JY6812/-/refs/heads/main/%E7%BE%BD%E8%84%9A%E6%9C%ACv2.lua", true))()
+        end)
+        WindUI:Notify({ Title = "别的脚本", Content = "少脚本（羽脚本v2）已加载", Duration = 4, Icon = "download" })
     end,
 })
 
@@ -2510,7 +2661,7 @@ DefenseTab:Section({ Title = "防虚空" })
 
 DefenseTab:Paragraph({
     Title = "🌌 防虚空",
-    Desc = "开启后自动记录你最近站立的安全地面位置。当 Y 坐标低于安全阈值（根据 FallenPartsDestroyHeight 动态计算）时，立刻将角色传送回最近的安全位置，防止被甩飞或掉入虚空死亡。",
+    Desc = "开启后自动记录你最近站立的安全地面位置。当 Y 坐标低于安全阈值时，立刻将角色传送回最近的安全位置，防止被甩飞或掉入虚空死亡。",
 })
 
 local antiVoidEnabled = false
@@ -2610,19 +2761,19 @@ SettingsTab:Button({
 SettingsTab:Section({ Title = "使用提示" })
 SettingsTab:Paragraph({
     Title = "温馨提示",
-    Desc = "1. 自瞄：打开总开关后生效；FOV 圈在屏幕中心，可用滑条/输入框调节，并随时开关显示。\n2. 偷取道具：会克隆全服已装备的 Tool，并尝试调用游戏的 Backpack/Inventory 远程来索要物品，成功率取决于游戏自身远程的校验。\n3. 防虚空：掉落时自动传送回最近的安全地面。\n4. 位置管理：保存当前位置并在需要时传送回去。\n5. 内置飞行：点击“开启飞行（自带）”后出现屏幕方向按钮，点 ✕ 关闭飞行。\n6. 帧率设置：滑条拉到 60 及以下会自动锁定。\n7. 血量锁定：开启后血量持续锁定为滑条设定值。",
+    Desc = "1. 玩家操控2/3：独立的目标选择与传送控制，可与玩家选项同时使用来恶搞多名玩家。\n2. 自瞄：打开总开关后生效；FOV 圈可调可关。\n3. 偷取道具：克隆全服已装备 Tool 并尝试调用 Backpack 远程。\n4. 防虚空：掉落时自动传送回最近安全地面。\n5. 少脚本：在“别的脚本”中一键加载羽脚本v2。",
 })
 
 local AboutTab = Window:Tab({ Title = "关于", Icon = "info" })
 AboutTab:Section({ Title = "脚本信息" })
 AboutTab:Paragraph({
     Title = "PLH 脚本",
-    Desc = "版本：v0.69.7.9\n功能：速度 / 自带飞行 / 自瞄（总开关·队伍检查·瞄准部位·平滑度·FOV显示与调节）/ 防虚空 / 偷取道具 / 无敌少能飞侠FE / 寂寞甩飞 / 位置管理 / 道具扫描获取 / 玩家选择传送 / 环绕玩家 / 静默触摸甩飞 / 隐身 / 穿墙 / 无限跳 / 跳跃高度 / 自定义血量 / 血量锁定 / 帧率上限 / 防甩飞1.0 / 别的脚本加载 / 角色特效 / 天空修改 / NPC操控",
+    Desc = "版本：v0.76.89\n更新时间：2026.11.21 下午\n功能：速度 / 自带飞行 / 玩家操控2 / 玩家操控3 / 自瞄（总开关·队伍检查·瞄准部位·平滑度·FOV）/ 防虚空 / 偷取道具 / 少脚本 / 无敌少能飞侠FE / 寂寞甩飞 / 位置管理 / 道具扫描获取 / 环绕玩家 / 静默触摸甩飞 / 隐身 / 穿墙 / 无限跳 / 跳跃高度 / 自定义血量 / 血量锁定 / 帧率上限 / 防甩飞1.0 / 别的脚本加载 / 角色特效 / 天空修改 / NPC操控",
 })
-AboutTab:Section({ Title = "v0.69.7.9 更新内容" })
+AboutTab:Section({ Title = "v0.76.89 更新内容" })
 AboutTab:Paragraph({
     Title = "本次更新",
-    Desc = "1. 重写“偷取其他玩家道具”：克隆全服已装备 Tool，并自动探测调用 Backpack/Inventory 远程尝试获取物品。\n2. 自瞄新增“自瞄范围调试（FOV）”：可开关屏幕中心的范围圈，支持滑条/输入框同步调节半径（20-500）。\n3. 版本号更新为 v0.69.7.9。",
+    Desc = "1. 新增“玩家操控2”和“玩家操控3”选项卡：各自拥有独立的下拉框、传送距离、单次/循环传送，可与“玩家选项”同时使用，分别控制多名玩家进行传送恶搞。\n2. “别的脚本”新增“少脚本”按钮，一键加载羽脚本v2。\n3. 版本号更新为 v0.76.89。\n4. 更新时间：2026.11.21 下午。",
 })
 AboutTab:Section({ Title = "关于作者" })
 AboutTab:Paragraph({
@@ -2630,4 +2781,4 @@ AboutTab:Paragraph({
     Desc = "作者：Trmokih@Trmokih",
 })
 
-WindUI:Notify({ Title = "PLH 脚本", Content = "加载成功！版本 v0.69.7.9", Duration = 5, Icon = "check-circle" })
+WindUI:Notify({ Title = "PLH 脚本", Content = "加载成功！版本 v0.76.89｜2026.11.21 下午更新", Duration = 5, Icon = "check-circle" })
